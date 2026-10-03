@@ -32,13 +32,50 @@ function setEngineStatus(text, isError = false) {
   engineStatus.classList.toggle("error", isError);
 }
 
-if (!hasBuiltIn) {
-  engineSel.querySelector('[value="chrome"]').disabled = true;
-  engineSel.value = "claude";
-  setEngineStatus("This browser has no built-in translator; use desktop Chrome 138+ for free translation.");
-} else {
-  try { engineSel.value = localStorage.getItem("engine") || "chrome"; } catch { /* storage blocked */ }
+{
+  let saved = "";
+  try { saved = localStorage.getItem("engine") || ""; } catch { /* storage blocked */ }
+  if (!hasBuiltIn) {
+    // Phones, Safari, Firefox: Chrome's translator isn't there, the on-device model is.
+    engineSel.querySelector('[value="chrome"]').disabled = true;
+    engineSel.value = saved && saved !== "chrome" ? saved : "opus";
+  } else {
+    engineSel.value = saved || "chrome";
+  }
   if (engineSel.value === "chrome") setEngineStatus("Free, runs on this computer");
+  if (engineSel.value === "opus") setEngineStatus("Free; downloads ~80 MB the first time");
+}
+
+// On-device Opus-MT model in a worker (mt-worker.js).
+let mtWorker = null;
+let mtNextId = 0;
+const mtPending = new Map();
+function opusTranslate(texts) {
+  if (!mtWorker) {
+    mtWorker = new Worker(new URL("./mt-worker.js", import.meta.url), { type: "module" });
+    mtWorker.onmessage = ({ data }) => {
+      if (data.type === "progress") {
+        const pct = data.total ? Math.round((data.loaded / data.total) * 100) : 0;
+        setEngineStatus(`Downloading translation model… ${pct}% (only the first time)`);
+        return;
+      }
+      const job = mtPending.get(data.id);
+      if (!job) return;
+      mtPending.delete(data.id);
+      if (data.type === "result") {
+        setEngineStatus("Free, runs on this device");
+        job.resolve(data.texts);
+      } else {
+        setEngineStatus(data.message, true);
+        job.reject(new Error(data.message));
+      }
+    };
+  }
+  const id = mtNextId++;
+  return new Promise((resolve, reject) => {
+    mtPending.set(id, { resolve, reject });
+    mtWorker.postMessage({ type: "translate", id, texts });
+  });
 }
 
 async function createBuiltIn() {
@@ -88,10 +125,18 @@ export function prepareEngine() {
 engineSel.addEventListener("change", () => {
   try { localStorage.setItem("engine", engineSel.value); } catch { /* storage blocked */ }
   if (engineSel.value === "chrome") { setEngineStatus("Free, runs on this computer"); prepareEngine(); }
+  else if (engineSel.value === "opus") setEngineStatus("Free; downloads ~80 MB the first time");
   else setEngineStatus("Uses the server's Anthropic API key");
 });
 
 async function translate(lines, context = []) {
+  if (engineSel.value === "opus") {
+    const texts = lines.map((l) => l.text.trim());
+    const nonEmpty = texts.filter(Boolean);
+    const out = nonEmpty.length ? await opusTranslate(nonEmpty) : [];
+    let k = 0;
+    return lines.map((l, i) => ({ id: l.id, text: texts[i] ? out[k++] ?? "" : "" }));
+  }
   if (engineSel.value === "chrome") {
     const translator = await getBuiltIn();
     return Promise.all(lines.map(async (l) => ({ id: l.id, text: l.text.trim() ? await translator.translate(l.text) : "" })));
@@ -214,9 +259,9 @@ for (const tab of document.querySelectorAll(".tab")) {
 
   function handleInterim(interim) {
     showEnglish("", interim);
-    // Partial translations are near-instant with Chrome's on-device translator. With Claude
-    // each one would be a paid request, so Claude only translates finished phrases.
-    if (engineSel.value === "chrome" && interim.split(/\s+/).length >= MIN_INTERIM_WORDS) {
+    // Partial translations are free with the on-device translators. With Claude each one
+    // would be a paid request, so Claude only translates finished phrases.
+    if (engineSel.value !== "claude" && interim.split(/\s+/).length >= MIN_INTERIM_WORDS) {
       translateInterim(interim);
     }
   }
@@ -269,13 +314,18 @@ for (const tab of document.querySelectorAll(".tab")) {
   async function listMics() {
     if (!navigator.mediaDevices?.enumerateDevices) return;
     const mics = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
-    const current = micSel.value;
+    let saved = micSel.value;
+    try { saved ||= localStorage.getItem("liveMic") || ""; } catch { /* storage blocked */ }
     micSel.replaceChildren(new Option("Default microphone", ""));
     mics.forEach((d, i) => {
       if (d.deviceId === "default" || d.deviceId === "") return;
       micSel.append(new Option(d.label || `Microphone ${i + 1}`, d.deviceId));
     });
-    micSel.value = [...micSel.options].some((o) => o.value === current) ? current : "";
+    const has = (id) => [...micSel.options].some((o) => o.value === id);
+    // First time: prefer the computer's own microphone (e.g. "MacBook Pro Microphone") over
+    // whatever the system default happens to be (AirPods, an iPhone, a webcam).
+    const builtIn = mics.find((d) => /macbook|built-in|internal/i.test(d.label));
+    micSel.value = has(saved) ? saved : builtIn && has(builtIn.deviceId) ? builtIn.deviceId : "";
   }
   listMics();
   navigator.mediaDevices?.addEventListener?.("devicechange", listMics);
@@ -301,8 +351,31 @@ for (const tab of document.querySelectorAll(".tab")) {
     return () => { cancelAnimationFrame(raf); ctx.close(); levelEl.style.width = "0"; };
   }
 
+  const boostSel = $("liveBoost");
+  try { boostSel.value = localStorage.getItem("liveBoost") || "3"; } catch { /* storage blocked */ }
+  let rawStream = null;
+  let boostGraph = null;
+
+  // Mic boost: gain, then a compressor so loud effects don't clip while quiet dialogue is
+  // lifted. Every recogniser and the level meter use the boosted signal.
+  function boost(stream) {
+    const ctx = new AudioContext();
+    ctx.resume().catch(() => {});
+    const gain = ctx.createGain();
+    gain.gain.value = Number(boostSel.value) || 1;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -28;
+    comp.knee.value = 20;
+    comp.ratio.value = 6;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.25;
+    const out = ctx.createMediaStreamDestination();
+    ctx.createMediaStreamSource(stream).connect(gain).connect(comp).connect(out);
+    return { ctx, gain, stream: out.stream };
+  }
+
   async function openMic() {
-    micStream = await navigator.mediaDevices.getUserMedia({
+    rawStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         ...(micSel.value ? { deviceId: { exact: micSel.value } } : {}),
         // Video-call clean-up treats film dialogue as background noise and removes it.
@@ -312,6 +385,8 @@ for (const tab of document.querySelectorAll(".tab")) {
         channelCount: 1,
       },
     });
+    boostGraph = boost(rawStream);
+    micStream = boostGraph.stream;
     micTrack = micStream.getAudioTracks()[0];
     stopMeter = startMeter(micStream);
     listMics(); // device names are only available after permission is granted
@@ -320,8 +395,9 @@ for (const tab of document.querySelectorAll(".tab")) {
   function closeMic() {
     stopMeter?.();
     stopMeter = null;
-    micStream?.getTracks().forEach((t) => t.stop());
-    micStream = micTrack = null;
+    rawStream?.getTracks().forEach((t) => t.stop());
+    boostGraph?.ctx.close().catch(() => {});
+    rawStream = micStream = micTrack = boostGraph = null;
   }
 
   function runRecognition() {
@@ -431,7 +507,12 @@ for (const tab of document.querySelectorAll(".tab")) {
     stop();
     await start();
   });
+  boostSel.addEventListener("change", () => {
+    try { localStorage.setItem("liveBoost", boostSel.value); } catch { /* storage blocked */ }
+    if (boostGraph) boostGraph.gain.gain.value = Number(boostSel.value) || 1;
+  });
   micSel.addEventListener("change", async () => {
+    try { localStorage.setItem("liveMic", micSel.value); } catch { /* storage blocked */ }
     if (!listening) return;
     stop();
     await start();

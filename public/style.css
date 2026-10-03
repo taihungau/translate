@@ -25,7 +25,8 @@ h2 { font-size: 1.05rem; margin: 24px 0 8px; }
 
 .title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 12px; }
 .title-row h1 { margin: 0; margin-right: auto; }
-.engine { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; }
+.engine { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--muted); font-size: .9rem; max-width: 100%; min-width: 0; }
+.engine select { flex: 1 1 auto; }
 nav { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
 .tab {
   border: none; background: none; color: var(--muted);
@@ -43,6 +44,7 @@ button, select {
   font: inherit; padding: 6px 12px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--panel); color: var(--fg); cursor: pointer;
 }
+select { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
 button:disabled { opacity: .5; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #e6e6e6; min-width: 90px; }
 button.primary.listening { background: #222; border-color: #333; color: var(--fg); }

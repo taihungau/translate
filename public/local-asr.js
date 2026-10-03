@@ -1,5 +1,7 @@
-// On-device speech recognition: captures microphone audio at 16 kHz, splits it into phrases
-// at pauses, and transcribes them with Whisper or Moonshine in a worker (asr-worker.js).
+// On-device speech recognition: captures microphone audio at 16 kHz, cuts it into chunks at
+// natural pauses, and transcribes them with Whisper or Moonshine in a worker (asr-worker.js).
+// No audio is thrown away: in a cinema, dialogue sits on top of music and effects, so a
+// loudness gate would miss words. Loudness is only used to choose where to cut.
 
 export const LOCAL_MODELS = {
   "moonshine-tiny": { kind: "moonshine", repos: ["onnx-community/moonshine-tiny-ONNX"] },
@@ -7,16 +9,26 @@ export const LOCAL_MODELS = {
   "whisper-tiny": { kind: "whisper", repos: ["onnx-community/whisper-tiny.en", "Xenova/whisper-tiny.en"] },
   "whisper-base": { kind: "whisper", repos: ["onnx-community/whisper-base.en", "Xenova/whisper-base.en"] },
   "whisper-small": { kind: "whisper", repos: ["onnx-community/whisper-small.en", "Xenova/whisper-small.en"] },
+  "distil-small": { kind: "whisper", repos: ["onnx-community/distil-small.en", "Xenova/distil-small.en"] },
+  "whisper-turbo": {
+    kind: "whisper-multi", // multilingual model: told to transcribe English
+    repos: ["onnx-community/whisper-large-v3-turbo"],
+    // The full-precision encoder is ~2.5 GB; half precision keeps it near 1 GB.
+    dtypes: {
+      webgpu: [{ encoder_model: "fp16", decoder_model_merged: "q4" }, { encoder_model: "q4", decoder_model_merged: "q4" }],
+      wasm: ["q8"],
+    },
+  },
 };
 
 const SAMPLE_RATE = 16000;
 const FRAME = 480; // 30 ms
 const FRAME_MS = 30;
-const PRE_ROLL_FRAMES = 10; // keep 300 ms before speech starts so first syllables aren't cut
-const END_SILENCE_MS = 550; // a pause this long ends a phrase
-const MAX_PHRASE_MS = 8000; // long run-on speech is cut here
-const MIN_SPEECH_MS = 300; // ignore clicks and short noises
-const INTERIM_EVERY_MS = 900;
+const PAUSE_MS = 300; // a dip this long counts as a pause between phrases
+const MIN_CHUNK_MS = 2500; // models are much more accurate with a few seconds of context
+const MAX_CHUNK_MS = 6000; // long run-on speech is cut at its quietest point before this
+const INTERIM_EVERY_MS = 600;
+const SILENT_RMS = 0.002; // below this nothing is audible at all
 
 // Whisper and Moonshine invent text for music, applause and silence.
 const JUNK = /^(thank you\.?|thanks for watching!?|you\.?|bye\.?|\.+|-+|so\.?)$/i;
@@ -25,6 +37,8 @@ export function cleanTranscript(text) {
   const cleaned = text
     .replace(/\[[^\]]*\]|\([^)]*\)|\*[^*]*\*|♪+/g, " ") // [Music], (laughs), *sighs*, ♪
     .replace(/\s+/g, " ")
+    // Over music the models sometimes loop: "go go go go", "I'm here. I'm here. I'm here."
+    .replace(/(\b.{2,40}?)(?:[\s,.!?]+\1\b){2,}/gi, "$1")
     .trim();
   return JUNK.test(cleaned) ? "" : cleaned;
 }
@@ -113,11 +127,10 @@ export class LocalRecognizer {
 
   resetVad() {
     this.carry = new Float32Array(0);
-    this.preRoll = [];
-    this.phrase = null; // array of frames while someone is speaking
-    this.silentFrames = 0;
-    this.noiseFloor = 0.01;
-    this.lastInterim = 0;
+    this.chunk = []; // frames since the last cut
+    this.levels = []; // loudness of each frame in the chunk
+    this.quietRun = 0;
+    this.lastInterim = performance.now();
   }
 
   feed(samples) {
@@ -133,44 +146,63 @@ export class LocalRecognizer {
     let sum = 0;
     for (const v of f) sum += v * v;
     const rms = Math.sqrt(sum / f.length);
-    // Speech is anything clearly louder than the recent background level (music, room noise).
-    const threshold = Math.max(this.noiseFloor * 2.2, 0.004);
-    const loud = rms > threshold;
+    this.chunk.push(f);
+    this.levels.push(rms);
 
-    if (!this.phrase) {
-      this.noiseFloor = 0.97 * this.noiseFloor + 0.03 * rms;
-      this.preRoll.push(f);
-      if (this.preRoll.length > PRE_ROLL_FRAMES) this.preRoll.shift();
-      if (loud) {
-        this.phrase = [...this.preRoll];
-        this.preRoll = [];
-        this.silentFrames = 0;
-        this.loudFrames = 1;
-        this.lastInterim = performance.now();
-      }
+    // A pause is a clear dip below the loudness of the last second. Steady music or room
+    // noise never dips, so it doesn't cause cuts; gaps between sentences do.
+    let recentPeak = 0;
+    for (let k = Math.max(0, this.levels.length - 33); k < this.levels.length; k++) {
+      if (this.levels[k] > recentPeak) recentPeak = this.levels[k];
+    }
+    this.quietRun = rms < Math.max(recentPeak * 0.35, 0.0025) ? this.quietRun + 1 : 0;
+
+    const ms = this.chunk.length * FRAME_MS;
+    const audible = this.levels.some((l) => l > SILENT_RMS);
+
+    if (!audible) {
+      // Real silence: nothing to transcribe, keep only a short lead-in.
+      if (ms > 2000) this.keepFrom(this.chunk.length - 10);
       return;
     }
-
-    this.noiseFloor = 0.998 * this.noiseFloor + 0.002 * rms;
-    this.phrase.push(f);
-    this.silentFrames = loud ? 0 : this.silentFrames + 1;
-    if (loud) this.loudFrames++;
-    const ms = this.phrase.length * FRAME_MS;
-
-    if (this.silentFrames * FRAME_MS >= END_SILENCE_MS) {
-      const speech = this.phrase.slice(0, this.phrase.length - this.silentFrames + 3);
-      this.phrase = null;
-      if (this.loudFrames * FRAME_MS >= MIN_SPEECH_MS) this.send(speech, true);
-    } else if (ms >= MAX_PHRASE_MS) {
-      this.send(this.phrase, true);
-      this.phrase = [];
-      this.loudFrames = 0;
-      this.lastInterim = performance.now();
-    } else if (ms >= 1000 && this.busy === 0 && performance.now() - this.lastInterim >= INTERIM_EVERY_MS) {
+    if (ms >= MIN_CHUNK_MS && this.quietRun * FRAME_MS >= PAUSE_MS) {
+      // Cut in the middle of the pause so neither side loses the edge of a word.
+      this.cut(this.chunk.length - Math.floor(this.quietRun / 2));
+    } else if (ms >= MAX_CHUNK_MS) {
+      this.cut(this.quietestPoint());
+    } else if (ms >= 700 && this.busy === 0 && performance.now() - this.lastInterim >= INTERIM_EVERY_MS) {
       // Partial result so subtitles start while the sentence is still going.
       this.lastInterim = performance.now();
-      this.send(this.phrase, false);
+      this.send(this.chunk, false);
     }
+  }
+
+  // Index of the quietest ~150 ms in the last 2 seconds of the chunk.
+  quietestPoint() {
+    const n = this.levels.length;
+    let best = n - 1;
+    let bestLevel = Infinity;
+    for (let i = Math.max(3, n - 67); i < n - 3; i++) {
+      const level = this.levels[i - 2] + this.levels[i - 1] + this.levels[i] + this.levels[i + 1] + this.levels[i + 2];
+      if (level < bestLevel) {
+        bestLevel = level;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  cut(at) {
+    const head = this.chunk.slice(0, at);
+    if (this.levels.slice(0, at).some((l) => l > SILENT_RMS)) this.send(head, true);
+    this.keepFrom(at);
+    this.lastInterim = performance.now();
+  }
+
+  keepFrom(index) {
+    this.chunk = this.chunk.slice(index);
+    this.levels = this.levels.slice(index);
+    this.quietRun = 0;
   }
 
   send(frames, final) {

@@ -14,8 +14,9 @@
       <h1>Subtitle Translator <span class="langs">EN → RU</span></h1>
       <label class="engine">Translate with
         <select id="engine">
-          <option value="chrome">Chrome built-in (free, no key)</option>
-          <option value="claude">Claude (needs API key on server)</option>
+          <option value="chrome">Chrome built-in (free)</option>
+          <option value="opus">On-device model (free, works on phones)</option>
+          <option value="claude">Claude (needs API key)</option>
         </select>
       </label>
       <span id="engineStatus" class="status"></span>
@@ -39,12 +40,14 @@
         <button id="liveToggle" class="primary">Start</button>
         <label><input type="checkbox" id="liveShowEn" checked> Show English</label>
         <select id="liveAsr" aria-label="Speech recognition">
-          <option value="chrome">Recognition: Chrome (Google, online)</option>
-          <option value="moonshine-tiny">Recognition: Moonshine Tiny (on device, fastest)</option>
-          <option value="moonshine-base">Recognition: Moonshine Base (on device, fast)</option>
-          <option value="whisper-tiny">Recognition: Whisper Tiny (on device)</option>
-          <option value="whisper-base">Recognition: Whisper Base (on device, accurate)</option>
-          <option value="whisper-small">Recognition: Whisper Small (most accurate, needs a strong GPU)</option>
+          <option value="chrome">Speech: Chrome (online)</option>
+          <option value="moonshine-tiny">Speech: Moonshine Tiny (fastest)</option>
+          <option value="moonshine-base">Speech: Moonshine Base (fast)</option>
+          <option value="whisper-tiny">Speech: Whisper Tiny</option>
+          <option value="whisper-base">Speech: Whisper Base (accurate)</option>
+          <option value="distil-small">Speech: Distil-Whisper Small (accurate, fast)</option>
+          <option value="whisper-small">Speech: Whisper Small (strong GPU)</option>
+          <option value="whisper-turbo">Speech: Whisper Large Turbo (best, ~1 GB)</option>
         </select>
         <select id="liveLang" aria-label="Accent of the film">
           <option value="en-US">English (US)</option>
@@ -54,6 +57,13 @@
           <option value="en-IN">English (India)</option>
         </select>
         <select id="liveMic" aria-label="Microphone"><option value="">Default microphone</option></select>
+        <select id="liveBoost" aria-label="Microphone boost">
+          <option value="1">Mic boost: off</option>
+          <option value="2">Mic boost: 2×</option>
+          <option value="3">Mic boost: 3×</option>
+          <option value="5">Mic boost: 5×</option>
+          <option value="8">Mic boost: 8×</option>
+        </select>
         <span class="level" title="Microphone level: it should jump when the actors speak"><i id="liveLevel"></i></span>
         <button id="liveFullscreen">Fullscreen</button>
         <span id="liveStatus" class="status"></span>

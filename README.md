@@ -24,6 +24,9 @@ Pick the engine at the top of the page:
 - **Chrome built-in (default, free).** Desktop Chrome 138 or later has an on-device
   translator. No API key or server is needed, and the first use downloads Chrome's Russian
   language pack. Translation is literal and doesn't use earlier lines for context.
+- **On-device model (free, works on phones).** Opus-MT English→Russian running in the browser
+  with transformers.js, used automatically where Chrome's translator is missing (phones, Safari,
+  Firefox). The first use downloads about 80 MB, then it is cached.
 - **Claude.** More natural, context-aware subtitles. It needs `ANTHROPIC_API_KEY` set on the
   server, and is the only option in browsers without the built-in translator (Safari, Firefox,
   and Chrome on phones).
@@ -34,13 +37,20 @@ Also chosen on the page, and free either way:
 
 - **Chrome (default).** The browser's own recognizer, which sends audio to Google. Fast, but it
   struggles with music, effects and echo.
-- **On device: Moonshine Tiny/Base, Whisper Tiny/Base/Small.** Open models that run in the
+- **On device: Moonshine Tiny/Base, Whisper Tiny/Base/Small, Distil-Whisper Small, Whisper
+  Large v3 Turbo.** Open models that run in the
   browser with [transformers.js](https://github.com/huggingface/transformers.js), on the GPU
   (WebGPU) when available. They usually cope better with film sound. The first use downloads
-  the model (tens of MB for Tiny, a few hundred for Small), then it is cached. The page splits
-  speech into phrases at pauses, so subtitles appear when a phrase ends, plus partial updates
-  for longer sentences. Whisper Base is a good starting point; Small is the most accurate but
-  needs a strong GPU, and on a computer without WebGPU stick to the Tiny models.
+  the model (tens of MB for Tiny, about 1 GB for Large Turbo), then it is cached. All audio is
+  transcribed (nothing is dropped by a loudness gate); it is cut into 2.5–6 s chunks at pauses,
+  or at the quietest moment during continuous music, with partial results every 0.6 s.
+  Distil-Whisper Small is a good balance; Large Turbo is the most accurate but needs a powerful
+  GPU, and on a computer or phone without WebGPU stick to the Tiny models.
+
+The microphone is opened without call-style echo cancellation and noise suppression (which
+remove film dialogue), with a selectable boost (default 3×) followed by a compressor so quiet
+dialogue is lifted without loud effects clipping. The computer's own microphone (for example
+"MacBook Pro Microphone") is preferred over the system default, and the choice is remembered.
 
 ## Run it
 
