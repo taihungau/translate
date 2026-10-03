@@ -28,7 +28,19 @@ Pick the engine at the top of the page:
   server, and is the only option in browsers without the built-in translator (Safari, Firefox,
   and Chrome on phones).
 
-Speech recognition in live mode is built into the browser and is free either way.
+## Speech recognition (live mode)
+
+Also chosen on the page, and free either way:
+
+- **Chrome (default).** The browser's own recognizer, which sends audio to Google. Fast, but it
+  struggles with music, effects and echo.
+- **On device: Moonshine Tiny/Base, Whisper Tiny/Base/Small.** Open models that run in the
+  browser with [transformers.js](https://github.com/huggingface/transformers.js), on the GPU
+  (WebGPU) when available. They usually cope better with film sound. The first use downloads
+  the model (tens of MB for Tiny, a few hundred for Small), then it is cached. The page splits
+  speech into phrases at pauses, so subtitles appear when a phrase ends, plus partial updates
+  for longer sentences. Whisper Base is a good starting point; Small is the most accurate but
+  needs a strong GPU, and on a computer without WebGPU stick to the Tiny models.
 
 ## Run it
 

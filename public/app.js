@@ -1,4 +1,5 @@
 import { parseSubtitles, toSrt, findCueAt } from "./subtitles.js";
+import { LocalRecognizer } from "./local-asr.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -211,6 +212,15 @@ for (const tab of document.querySelectorAll(".tab")) {
     interimBusy = false;
   }
 
+  function handleInterim(interim) {
+    showEnglish("", interim);
+    // Partial translations are near-instant with Chrome's on-device translator. With Claude
+    // each one would be a paid request, so Claude only translates finished phrases.
+    if (engineSel.value === "chrome" && interim.split(/\s+/).length >= MIN_INTERIM_WORDS) {
+      translateInterim(interim);
+    }
+  }
+
   async function addPhrase(text) {
     const p = phrase++;
     interimNext = null;
@@ -227,14 +237,34 @@ for (const tab of document.querySelectorAll(".tab")) {
     }
   }
 
+  const asrSel = $("liveAsr");
   const langSel = $("liveLang");
+  const local = new LocalRecognizer({
+    onInterim: (text) => handleInterim(text),
+    onFinal: (text) => addPhrase(text),
+    onStatus: (text) => setStatus(text),
+    onError: (message) => setStatus(message, true),
+  });
   const micSel = $("liveMic");
   const levelEl = $("liveLevel");
   let micStream = null;
   let micTrack = null;
   let stopMeter = null;
 
-  try { langSel.value = localStorage.getItem("liveLang") || "en-US"; } catch { /* storage blocked */ }
+  try {
+    langSel.value = localStorage.getItem("liveLang") || "en-US";
+    asrSel.value = localStorage.getItem("liveAsr") || "chrome";
+    if (!asrSel.value) asrSel.value = "chrome";
+  } catch { /* storage blocked */ }
+  const usesChrome = () => asrSel.value === "chrome";
+  langSel.hidden = !usesChrome(); // on-device models are English-only and handle accents themselves
+  if (!Recognition) {
+    // No browser speech recognition: on-device models still work.
+    asrSel.querySelector('[value="chrome"]').disabled = true;
+    if (usesChrome()) asrSel.value = "whisper-base";
+    toggleBtn.disabled = false;
+    setStatus("");
+  }
 
   async function listMics() {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -326,6 +356,24 @@ for (const tab of document.querySelectorAll(".tab")) {
     }
     if (!listening) return closeMic();
 
+    if (!usesChrome()) {
+      if (!micStream) {
+        setStatus("Couldn't open the microphone.", true);
+        stop();
+        return;
+      }
+      try {
+        const device = await local.load(asrSel.value);
+        if (!listening) return;
+        await local.start(micStream);
+        setStatus(device === "webgpu" ? "Listening (on device, GPU)…" : "Listening (on device, CPU: may lag)…");
+      } catch (err) {
+        setStatus(err.message, true);
+        stop();
+      }
+      return;
+    }
+
     recognition = new Recognition();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -341,13 +389,7 @@ for (const tab of document.querySelectorAll(".tab")) {
         else interim += transcript + " ";
       }
       interim = interim.trim();
-      if (!interim) return;
-      showEnglish("", interim);
-      // Partial translations are near-instant with Chrome's on-device translator. With Claude
-      // each one would be a paid request, so Claude only translates finished phrases.
-      if (engineSel.value === "chrome" && interim.split(/\s+/).length >= MIN_INTERIM_WORDS) {
-        translateInterim(interim);
-      }
+      if (interim) handleInterim(interim);
     };
     recognition.onerror = (event) => {
       if (event.error === "no-speech" || event.error === "aborted") return;
@@ -370,6 +412,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     listening = false;
     recognition?.stop();
     recognition = null;
+    local.stop();
     closeMic();
     toggleBtn.textContent = "Start";
     toggleBtn.classList.remove("listening");
@@ -380,6 +423,13 @@ for (const tab of document.querySelectorAll(".tab")) {
   langSel.addEventListener("change", () => {
     try { localStorage.setItem("liveLang", langSel.value); } catch { /* storage blocked */ }
     recognition?.stop(); // onend restarts it with the new accent
+  });
+  asrSel.addEventListener("change", async () => {
+    try { localStorage.setItem("liveAsr", asrSel.value); } catch { /* storage blocked */ }
+    langSel.hidden = !usesChrome();
+    if (!listening) return;
+    stop();
+    await start();
   });
   micSel.addEventListener("change", async () => {
     if (!listening) return;

@@ -38,6 +38,14 @@
       <div class="controls">
         <button id="liveToggle" class="primary">Start</button>
         <label><input type="checkbox" id="liveShowEn" checked> Show English</label>
+        <select id="liveAsr" aria-label="Speech recognition">
+          <option value="chrome">Recognition: Chrome (Google, online)</option>
+          <option value="moonshine-tiny">Recognition: Moonshine Tiny (on device, fastest)</option>
+          <option value="moonshine-base">Recognition: Moonshine Base (on device, fast)</option>
+          <option value="whisper-tiny">Recognition: Whisper Tiny (on device)</option>
+          <option value="whisper-base">Recognition: Whisper Base (on device, accurate)</option>
+          <option value="whisper-small">Recognition: Whisper Small (most accurate, needs a strong GPU)</option>
+        </select>
         <select id="liveLang" aria-label="Accent of the film">
           <option value="en-US">English (US)</option>
           <option value="en-GB">English (UK)</option>
