@@ -1,7 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": null,
+  "installCommand": "npm install",
   "outputDirectory": "public",
   "functions": {
-    "api/translate.js": { "maxDuration": 60 }
+    "api/translate.js": {
+      "maxDuration": 60
+    }
   }
 }

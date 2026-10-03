@@ -39,7 +39,7 @@ The page asks for it once and remembers it in that browser.
 ## Deploy on Vercel
 
 The repo is ready for Vercel: `public/` is served as static files and `api/translate.js` runs
-as a serverless function (`server.js` is only for running locally).
+as a serverless function (`local/server.js` is only for running locally).
 
 1. Push the repo to GitHub, then in Vercel choose **Add New… → Project** and import it.
    Leave the framework preset as **Other**; `vercel.json` sets everything else.

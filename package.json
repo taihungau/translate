@@ -1,11 +1,10 @@
 {
   "name": "subtitle-translator",
   "version": "1.0.0",
-  "description": "Realtime English → Russian movie subtitle translation powered by Claude",
+  "description": "Realtime English \u2192 Russian movie subtitle translation powered by Claude",
   "type": "module",
-  "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node local/server.js",
     "test": "node --test test/*.test.js"
   },
   "engines": {

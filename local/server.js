@@ -1,11 +1,12 @@
+// Local development server only. On Vercel, public/ is served statically and api/translate.js handles requests.
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleTranslate } from "./lib/handler.js";
+import { handleTranslate } from "../lib/handler.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const PUBLIC_DIR = path.join(here, "public");
+const PUBLIC_DIR = path.join(here, "..", "public");
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_BODY_BYTES = 256 * 1024;
 
