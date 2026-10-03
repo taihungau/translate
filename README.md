@@ -42,10 +42,12 @@ Also chosen on the page, and free either way:
   browser with [transformers.js](https://github.com/huggingface/transformers.js), on the GPU
   (WebGPU) when available. They usually cope better with film sound. The first use downloads
   the model (tens of MB for Tiny, about 1 GB for Large Turbo), then it is cached. All audio is
-  transcribed (nothing is dropped by a loudness gate); it is cut into 2.5–6 s chunks at pauses,
-  or at the quietest moment during continuous music, with partial results every 0.6 s.
-  Distil-Whisper Small is a good balance; Large Turbo is the most accurate but needs a powerful
-  GPU, and on a computer or phone without WebGPU stick to the Tiny models.
+  transcribed (nothing is dropped by a loudness gate); it is cut into 1.5–4.5 s chunks at pauses,
+  or at the quietest moment during continuous music, and partial results are requested again as
+  soon as the model is free (about every 0.25 s). For real time use **Moonshine**: it processes
+  only the audio it is given, while Whisper always processes a padded 30-second window, so each
+  Whisper update costs the same however short the line. Whisper models are more accurate but
+  slower; the status line shows the time per update on your computer.
 
 The microphone is opened without call-style echo cancellation and noise suppression (which
 remove film dialogue), with a selectable boost (default 3×) followed by a compressor so quiet

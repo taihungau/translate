@@ -24,10 +24,10 @@ export const LOCAL_MODELS = {
 const SAMPLE_RATE = 16000;
 const FRAME = 480; // 30 ms
 const FRAME_MS = 30;
-const PAUSE_MS = 300; // a dip this long counts as a pause between phrases
-const MIN_CHUNK_MS = 2500; // models are much more accurate with a few seconds of context
-const MAX_CHUNK_MS = 6000; // long run-on speech is cut at its quietest point before this
-const INTERIM_EVERY_MS = 600;
+const PAUSE_MS = 250; // a dip this long counts as a pause between phrases
+const MIN_CHUNK_MS = 1500; // enough context for accuracy, short enough to stay real-time
+const MAX_CHUNK_MS = 4500; // long run-on speech is cut at its quietest point before this
+const INTERIM_EVERY_MS = 250; // in practice: as soon as the model is free again
 const SILENT_RMS = 0.002; // below this nothing is audible at all
 
 // Whisper and Moonshine invent text for music, applause and silence.
@@ -81,6 +81,7 @@ export class LocalRecognizer {
         this.readyResolve?.(data.device);
       } else if (data.type === "result") {
         this.busy--;
+        this.h.onTiming?.(data.ms, data.seconds);
         const text = cleanTranscript(data.text);
         if (text) (data.final ? this.h.onFinal : this.h.onInterim)(text);
       } else if (data.type === "error") {
@@ -170,7 +171,7 @@ export class LocalRecognizer {
       this.cut(this.chunk.length - Math.floor(this.quietRun / 2));
     } else if (ms >= MAX_CHUNK_MS) {
       this.cut(this.quietestPoint());
-    } else if (ms >= 700 && this.busy === 0 && performance.now() - this.lastInterim >= INTERIM_EVERY_MS) {
+    } else if (ms >= 450 && this.busy === 0 && performance.now() - this.lastInterim >= INTERIM_EVERY_MS) {
       // Partial result so subtitles start while the sentence is still going.
       this.lastInterim = performance.now();
       this.send(this.chunk, false);

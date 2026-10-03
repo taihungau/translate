@@ -206,7 +206,7 @@ for (const tab of document.querySelectorAll(".tab")) {
   let interimRank = 0;
   let shown = { phrase: -1, rank: -1 };
 
-  const MIN_INTERIM_WORDS = 3;
+  const MIN_INTERIM_WORDS = 2;
   const MAX_SUBTITLE_CHARS = 110;
 
   function setStatus(text, isError = false) {
@@ -302,7 +302,18 @@ for (const tab of document.querySelectorAll(".tab")) {
     onFinal: (text) => addPhrase(text),
     onStatus: (text) => setStatus(text),
     onError: (message) => setStatus(message, true),
+    // Show how long each update takes, so models can be compared on this computer.
+    onTiming: (ms) => {
+      timings.push(ms);
+      if (timings.length > 8) timings.shift();
+      const avg = Math.round(timings.reduce((x, y) => x + y, 0) / timings.length);
+      if (listening && !statusEl.classList.contains("error")) {
+        setStatus(`Listening on ${localDevice === "webgpu" ? "GPU" : "CPU"} · ~${avg} ms per update${avg > 900 ? " (slow: try Moonshine)" : ""}`);
+      }
+    },
   });
+  const timings = [];
+  let localDevice = "";
   const micSel = $("liveMic");
   const levelEl = $("liveLevel");
   let micStream = null;
@@ -454,6 +465,8 @@ for (const tab of document.querySelectorAll(".tab")) {
       }
       try {
         const device = await local.load(asrSel.value);
+        localDevice = device;
+        timings.length = 0;
         if (!listening) return;
         await local.start(micStream);
         setStatus(device === "webgpu" ? "Listening (on device, GPU)…" : "Listening (on device, CPU: may lag)…");

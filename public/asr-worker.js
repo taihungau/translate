@@ -86,6 +86,8 @@ function optionsFor(kind, seconds) {
 
 async function transcribe({ id, audio, final }) {
   if (!asr) throw new Error("Speech model is not loaded");
+  const started = performance.now();
   const out = await asr(audio, optionsFor(loaded.kind, audio.length / 16000));
-  self.postMessage({ type: "result", id, final, text: (out?.text || "").trim() });
+  const ms = Math.round(performance.now() - started);
+  self.postMessage({ type: "result", id, final, ms, seconds: audio.length / 16000, text: (out?.text || "").trim() });
 }
