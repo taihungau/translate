@@ -1,0 +1,20 @@
+1
+00:00:01,000 --> 00:00:03,200
+Hey! Wait up, you forgot your keys.
+
+2
+00:00:03,600 --> 00:00:06,000
+Oh man, thanks.
+I'd lose my head if it wasn't attached.
+
+3
+00:00:06,500 --> 00:00:09,000
+[thunder rumbling]
+
+4
+00:00:09,400 --> 00:00:12,800
+We should get going before the storm hits.
+
+5
+00:00:13,200 --> 00:00:15,500
+<i>Too late. It's already here.</i>

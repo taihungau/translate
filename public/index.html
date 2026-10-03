@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Subtitle Translator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Subtitle Translator <span class="langs">EN → RU</span></h1>
+    <nav role="tablist">
+      <button role="tab" class="tab active" data-panel="live" aria-selected="true">Live (microphone)</button>
+      <button role="tab" class="tab" data-panel="video" aria-selected="false">Video + subtitle file</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- LIVE MODE -->
+    <section id="live" class="panel active">
+      <p class="hint">
+        Play the movie out loud and press <b>Start</b>. Your browser transcribes the English speech
+        and every phrase is translated into Russian as soon as it ends. Speech recognition needs
+        Chrome, Edge or Safari.
+      </p>
+      <div class="controls">
+        <button id="liveToggle" class="primary">Start</button>
+        <label><input type="checkbox" id="liveShowEn" checked> Show English</label>
+        <button id="liveFullscreen">Fullscreen subtitles</button>
+        <button id="liveClear">Clear history</button>
+        <span id="liveStatus" class="status"></span>
+      </div>
+
+      <div id="liveStage" class="stage">
+        <div class="sub-en" id="liveEn"></div>
+        <div class="sub-ru" id="liveRu"><span class="placeholder">Russian subtitles appear here</span></div>
+      </div>
+
+      <h2>Transcript</h2>
+      <ol id="liveHistory" class="history"></ol>
+    </section>
+
+    <!-- VIDEO MODE -->
+    <section id="video" class="panel">
+      <p class="hint">
+        Load a video and its English <code>.srt</code> or <code>.vtt</code> subtitles. Translation
+        starts at the current playback position and keeps ahead of it, so you can press play right away.
+        Seeking moves the translation to the new position.
+      </p>
+      <div class="controls">
+        <label class="file">Video <input type="file" id="videoFile" accept="video/*"></label>
+        <label class="file">Subtitles <input type="file" id="subFile" accept=".srt,.vtt,text/vtt"></label>
+        <select id="subMode" aria-label="Subtitle display">
+          <option value="ru">Russian only</option>
+          <option value="both">Russian + English</option>
+          <option value="en">English only</option>
+        </select>
+        <button id="downloadSrt" disabled>Download Russian .srt</button>
+      </div>
+      <div class="progress-row">
+        <progress id="subProgress" value="0" max="1"></progress>
+        <span id="subStatus" class="status">No subtitles loaded</span>
+      </div>
+
+      <div id="player" class="player">
+        <video id="videoEl" controls playsinline controlslist="nofullscreen"></video>
+        <div id="overlay" class="overlay"></div>
+        <button id="playerFullscreen" class="fs-btn" title="Fullscreen with subtitles">⛶</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
