@@ -10,10 +10,20 @@ export const LOCAL_MODELS = {
   "whisper-base": { kind: "whisper", repos: ["onnx-community/whisper-base.en", "Xenova/whisper-base.en"] },
   "whisper-small": { kind: "whisper", repos: ["onnx-community/whisper-small.en", "Xenova/whisper-small.en"] },
   "distil-small": { kind: "whisper", repos: ["onnx-community/distil-small.en", "Xenova/distil-small.en"] },
-  "whisper-turbo": {
+  "whisper-turbo-q4": {
     kind: "whisper-multi", // multilingual model: told to transcribe English
     repos: ["onnx-community/whisper-large-v3-turbo"],
-    // The full-precision encoder is ~2.5 GB; half precision keeps it near 1 GB.
+    // 4-bit weights: roughly a third of the half-precision download, loads much faster,
+    // small accuracy cost.
+    dtypes: {
+      webgpu: [{ encoder_model: "q4", decoder_model_merged: "q4" }, { encoder_model: "q4f16", decoder_model_merged: "q4f16" }],
+      wasm: ["q4", "q8"],
+    },
+  },
+  "whisper-turbo": {
+    kind: "whisper-multi",
+    repos: ["onnx-community/whisper-large-v3-turbo"],
+    // The full-precision encoder is ~2.5 GB; half precision brings the model to ~1.3 GB.
     dtypes: {
       webgpu: [{ encoder_model: "fp16", decoder_model_merged: "q4" }, { encoder_model: "q4", decoder_model_merged: "q4" }],
       wasm: ["q8"],
@@ -108,6 +118,7 @@ export class LocalRecognizer {
     this.finals = new Map(); // chunk -> final text
     this.cutTimes = new Map(); // chunk -> when it ended
     this.ctx = null;
+    this.loading = {}; // per worker: download/warm-up progress of the current load
   }
 
   get partialsWorker() {
@@ -117,13 +128,25 @@ export class LocalRecognizer {
   // The caption on screen is the previous line (Whisper's corrected text once it arrives)
   // followed by the live words of the current line, like rolling TV captions. Partials and
   // finals come from different models and finish out of order; this keeps them in place.
-  onMessage = (data) => {
-    if (data.type === "progress") {
-      const pct = data.total ? Math.round((data.loaded / data.total) * 100) : 0;
-      const mb = Math.round(data.total / 1e6);
-      this.h.onStatus(data.saved
-        ? `Loading saved speech model from this device… ${pct}%`
-        : `Downloading speech model… ${pct}% of ${mb} MB (only the first time)`);
+  onMessage = (data, tag = "main") => {
+    if (data.type === "progress" || data.type === "phase") {
+      // Combine the progress of every model being loaded (Whisper + its live-text helper).
+      const entry = (this.loading[tag] ??= { loaded: 0, total: 0, saved: true, warm: false });
+      if (data.type === "phase") entry.warm = true;
+      else Object.assign(entry, { loaded: data.loaded, total: data.total, saved: data.saved });
+      const all = Object.values(this.loading);
+      if (all.every((e) => e.warm)) {
+        const where = data.device === "webgpu" ? "GPU" : "processor";
+        this.h.onProgress?.({ pct: null, text: `Preparing the model on the ${where}…` });
+        return;
+      }
+      const loaded = all.reduce((n, e) => n + (e.warm ? e.total : e.loaded), 0);
+      const total = all.reduce((n, e) => n + e.total, 0);
+      const pct = total ? Math.round((loaded / total) * 100) : 0;
+      const text = all.every((e) => e.saved)
+        ? `Loading saved speech model… ${pct}%`
+        : `Downloading speech model… ${pct}% · ${Math.round(loaded / 1e6)} of ${Math.round(total / 1e6)} MB (only the first time)`;
+      this.h.onProgress?.({ pct, text });
       return;
     }
     if (data.type === "error") {
@@ -170,20 +193,25 @@ export class LocalRecognizer {
 
   /** Download (first time only) and load the chosen model. Resolves with "webgpu" or "wasm". */
   async load(modelKey) {
-    this.main ??= new ModelWorker(this.onMessage);
+    this.loading = {};
+    this.main ??= new ModelWorker((d) => this.onMessage(d, "main"));
     if (this.main.key !== modelKey || !this.main.ready) this.h.onStatus("Loading speech model…");
     const main = this.main.load(modelKey);
     let fast = Promise.resolve();
     if (LOCAL_MODELS[modelKey].kind.startsWith("whisper")) {
       // Load the live-text model at the same time, not after Whisper.
-      this.fast ??= new ModelWorker(this.onMessage);
+      this.fast ??= new ModelWorker((d) => this.onMessage(d, "fast"));
       fast = this.fast.load(FAST_PARTIALS_MODEL).catch((err) => {
         // Still works without it, just with slower partials.
         console.warn("Fast partials model unavailable:", err);
       });
     }
-    const [device] = await Promise.all([main, fast]);
-    return device;
+    try {
+      const [device] = await Promise.all([main, fast]);
+      return device;
+    } finally {
+      this.h.onLoadDone?.();
+    }
   }
 
   async start(stream) {
@@ -303,7 +331,8 @@ export async function isSavedOnDevice(modelKey) {
   if (LOCAL_MODELS[modelKey]?.kind.startsWith("whisper")) needs.push(FAST_PARTIALS_MODEL);
   try {
     const urls = (await (await caches.open("transformers-cache")).keys()).map((r) => r.url);
-    return needs.every((key) => LOCAL_MODELS[key].repos.some((repo) => urls.some((u) => u.includes(`/${repo}/`))));
+    // A saved model file (.onnx), not just its small config files.
+    return needs.every((key) => LOCAL_MODELS[key].repos.some((repo) => urls.some((u) => u.includes(`/${repo}/`) && u.endsWith(".onnx"))));
   } catch {
     return false;
   }

@@ -19,6 +19,26 @@ function askForCode() {
   return askingForCode;
 }
 
+// A progress bar: pct 0-100, or null for "working, no percentage" (an animated bar).
+function loadBar(id) {
+  const el = $(id);
+  const fill = el.querySelector("i");
+  const label = el.querySelector(".loadbar-label");
+  return {
+    set(pct, text) {
+      el.hidden = false;
+      el.classList.toggle("indeterminate", pct == null);
+      fill.style.width = pct == null ? "" : `${pct}%`;
+      label.textContent = text;
+    },
+    done() {
+      el.hidden = true;
+    },
+  };
+}
+const mtBar = loadBar("mtLoad");
+const asrBar = loadBar("asrLoad");
+
 // ---------------------------------------------------------------- translation engines
 // "chrome": Chrome's on-device Translator API (Chrome 138+ desktop). Free, no key, no server.
 // "claude": POST /api/translate, which calls Claude with the server's ANTHROPIC_API_KEY.
@@ -56,14 +76,17 @@ function opusTranslate(texts, type = "translate") {
     mtWorker.onmessage = ({ data }) => {
       if (data.type === "progress") {
         const pct = data.total ? Math.round((data.loaded / data.total) * 100) : 0;
-        setEngineStatus(data.saved
+        const text = data.saved
           ? `Loading saved translation model… ${pct}%`
-          : `Downloading translation model… ${pct}% (only the first time)`);
+          : `Downloading translation model… ${pct}% · ${Math.round(data.loaded / 1e6)} of ${Math.round(data.total / 1e6)} MB (only the first time)`;
+        setEngineStatus(text);
+        mtBar.set(pct, text);
         return;
       }
       const job = mtPending.get(data.id);
       if (!job) return;
       mtPending.delete(data.id);
+      mtBar.done();
       if (data.type === "result") {
         setEngineStatus("Free, runs on this device");
         job.resolve(data.texts);
@@ -88,11 +111,15 @@ async function createBuiltIn() {
   const translator = await Translator.create({
     ...PAIR,
     monitor(m) {
-      m.addEventListener("downloadprogress", (e) =>
-        setEngineStatus(`Downloading Russian language pack… ${Math.round(e.loaded * 100)}%`));
+      m.addEventListener("downloadprogress", (e) => {
+        const text = `Downloading Chrome's Russian language pack… ${Math.round(e.loaded * 100)}%`;
+        setEngineStatus(text);
+        mtBar.set(Math.round(e.loaded * 100), text);
+      });
     },
   });
   setEngineStatus("Free, runs on this computer");
+  mtBar.done();
   return translator;
 }
 
@@ -324,6 +351,8 @@ for (const tab of document.querySelectorAll(".tab")) {
     onFinal: (text, opts) => addPhrase(text, opts),
     onStatus: (text) => setStatus(text),
     onError: (message) => setStatus(message, true),
+    onProgress: ({ pct, text }) => asrBar.set(pct, text),
+    onLoadDone: () => asrBar.done(),
     // Show how long updates take, so models can be compared on this computer.
     onTiming: (ms, final) => {
       const list = final ? timings.final : timings.partial;

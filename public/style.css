@@ -53,6 +53,15 @@ button.primary.listening { background: #222; border-color: #333; color: var(--fg
 .level { width: 90px; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
 .level i { display: block; height: 100%; width: 0; background: #4f7a5a; }
 .status { color: var(--muted); font-size: .9rem; }
+
+/* Loading bars for model downloads and GPU preparation */
+.loadbar { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; min-width: 0; }
+.loadbar-track { position: relative; flex: 1 1 120px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.loadbar-track i { display: block; height: 100%; width: 0; background: #6d8f77; transition: width .25s; }
+.loadbar.indeterminate .loadbar-track i { width: 30%; animation: loadbar-slide 1.3s ease-in-out infinite; }
+.loadbar-label { flex: 0 1 auto; min-width: 0; color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+@keyframes loadbar-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+@media (prefers-reduced-motion: reduce) { .loadbar.indeterminate .loadbar-track i { animation: none; width: 100%; opacity: .5; } }
 .status.error { color: #c0675d; }
 h1 .langs { color: #b0463a; }
 .tab.active { color: var(--fg); }

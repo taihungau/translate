@@ -14,13 +14,21 @@ self.onmessage = ({ data }) => {
 };
 
 // Models are saved by transformers.js in Cache Storage after the first download.
-async function isSaved(repo) {
+async function savedUrls() {
   try {
-    const keys = await (await caches.open("transformers-cache")).keys();
-    return keys.some((r) => r.url.includes(`/${repo}/`));
+    return (await (await caches.open("transformers-cache")).keys()).map((r) => r.url);
   } catch {
-    return false;
+    return [];
   }
+}
+const isSavedFile = (urls, repo, file) => urls.some((u) => u.includes(`/${repo}/`) && u.endsWith(`/${file}`));
+
+// File name suffix transformers.js uses for each format.
+const SUFFIX = { fp32: "", fp16: "_fp16", q8: "_quantized", int8: "_int8", uint8: "_uint8", q4: "_q4", q4f16: "_q4f16", bnb4: "_bnb4" };
+function modelFiles(dtype) {
+  const enc = typeof dtype === "string" ? dtype : dtype.encoder_model;
+  const dec = typeof dtype === "string" ? dtype : dtype.decoder_model_merged;
+  return [`onnx/encoder_model${SUFFIX[enc] ?? ""}.onnx`, `onnx/decoder_model_merged${SUFFIX[dec] ?? ""}.onnx`];
 }
 
 // Which GPU features this computer has: WebGPU at all, and 16-bit floats (most recent GPUs,
@@ -63,27 +71,39 @@ async function load({ key, kind, repos, dtypes: dtypeOverrides }) {
       ]
     : ["q8", "fp32"]);
 
-  let saved = false;
+  // Try every repo/format combination, but ones already saved on this device first, so an
+  // earlier download is reused instead of fetching a different variant.
+  const urls = await savedUrls();
+  const candidates = repos.flatMap((repo) => dtypes.map((dtype) => ({ repo, dtype })));
+  const isSavedCandidate = ({ repo, dtype }) => modelFiles(dtype).every((f) => isSavedFile(urls, repo, f));
+  candidates.sort((a, b) => isSavedCandidate(b) - isSavedCandidate(a));
+
+  let repo = "";
   const files = new Map();
   const progress_callback = (p) => {
     if (p.status !== "progress" || !p.total) return;
-    files.set(p.file, { loaded: p.loaded, total: p.total });
+    files.set(p.file, { loaded: p.loaded, total: p.total, saved: isSavedFile(urls, repo, p.file) });
     let loadedBytes = 0;
     let totalBytes = 0;
+    let saved = true;
     for (const f of files.values()) {
       loadedBytes += f.loaded;
       totalBytes += f.total;
+      if (!f.saved && f.loaded < f.total) saved = false;
     }
     self.postMessage({ type: "progress", loaded: loadedBytes, total: totalBytes, saved });
   };
 
   let lastError;
-  for (const repo of repos) {
-    saved = await isSaved(repo);
-    for (const dtype of dtypes) {
+  for (const candidate of candidates) {
+    repo = candidate.repo;
+    const { dtype } = candidate;
+    files.clear();
+    {
       try {
         asr = await transformers.pipeline("automatic-speech-recognition", repo, { device, dtype, progress_callback });
         // The first run compiles GPU shaders; do it now rather than on the first line of dialogue.
+        self.postMessage({ type: "phase", phase: "warmup", device });
         await asr(new Float32Array(16000), optionsFor(kind, 1));
         loaded = { key, kind, device };
         self.postMessage({ type: "ready", device });
