@@ -47,6 +47,9 @@ button:disabled { opacity: .5; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #e6e6e6; min-width: 90px; }
 button.primary.listening { background: #222; border-color: #333; color: var(--fg); }
 .file input { max-width: 220px; }
+#liveMic { max-width: 220px; }
+.level { width: 90px; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.level i { display: block; height: 100%; width: 0; background: #4f7a5a; }
 .status { color: var(--muted); font-size: .9rem; }
 .status.error { color: #c0675d; }
 h1 .langs { color: #b0463a; }

@@ -32,10 +32,21 @@
       <p class="hint">
         Press <b>Start</b>, allow the microphone, and play the movie out loud. Each English line the
         microphone hears is shown in Russian a moment later. Needs Chrome, Edge or Safari.
+        For better recognition, point the microphone at the speakers (a headset or earbud mic works
+        well) and watch the level bar: it should jump whenever someone speaks.
       </p>
       <div class="controls">
         <button id="liveToggle" class="primary">Start</button>
         <label><input type="checkbox" id="liveShowEn" checked> Show English</label>
+        <select id="liveLang" aria-label="Accent of the film">
+          <option value="en-US">English (US)</option>
+          <option value="en-GB">English (UK)</option>
+          <option value="en-AU">English (Australia)</option>
+          <option value="en-CA">English (Canada)</option>
+          <option value="en-IN">English (India)</option>
+        </select>
+        <select id="liveMic" aria-label="Microphone"><option value="">Default microphone</option></select>
+        <span class="level" title="Microphone level: it should jump when the actors speak"><i id="liveLevel"></i></span>
         <button id="liveFullscreen">Fullscreen</button>
         <span id="liveStatus" class="status"></span>
       </div>

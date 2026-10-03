@@ -227,10 +227,106 @@ for (const tab of document.querySelectorAll(".tab")) {
     }
   }
 
-  function start() {
+  const langSel = $("liveLang");
+  const micSel = $("liveMic");
+  const levelEl = $("liveLevel");
+  let micStream = null;
+  let micTrack = null;
+  let stopMeter = null;
+
+  try { langSel.value = localStorage.getItem("liveLang") || "en-US"; } catch { /* storage blocked */ }
+
+  async function listMics() {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    const mics = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+    const current = micSel.value;
+    micSel.replaceChildren(new Option("Default microphone", ""));
+    mics.forEach((d, i) => {
+      if (d.deviceId === "default" || d.deviceId === "") return;
+      micSel.append(new Option(d.label || `Microphone ${i + 1}`, d.deviceId));
+    });
+    micSel.value = [...micSel.options].some((o) => o.value === current) ? current : "";
+  }
+  listMics();
+  navigator.mediaDevices?.addEventListener?.("devicechange", listMics);
+
+  // Shows whether the microphone actually hears the film.
+  function startMeter(stream) {
+    const ctx = new AudioContext();
+    ctx.resume().catch(() => {}); // may start suspended when created after the permission prompt
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+    const data = new Float32Array(analyser.fftSize);
+    let raf;
+    const tick = () => {
+      analyser.getFloatTimeDomainData(data);
+      let sum = 0;
+      for (const v of data) sum += v * v;
+      const rms = Math.sqrt(sum / data.length);
+      levelEl.style.width = `${Math.min(100, rms * 400)}%`;
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => { cancelAnimationFrame(raf); ctx.close(); levelEl.style.width = "0"; };
+  }
+
+  async function openMic() {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        ...(micSel.value ? { deviceId: { exact: micSel.value } } : {}),
+        // Video-call clean-up treats film dialogue as background noise and removes it.
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: true,
+        channelCount: 1,
+      },
+    });
+    micTrack = micStream.getAudioTracks()[0];
+    stopMeter = startMeter(micStream);
+    listMics(); // device names are only available after permission is granted
+  }
+
+  function closeMic() {
+    stopMeter?.();
+    stopMeter = null;
+    micStream?.getTracks().forEach((t) => t.stop());
+    micStream = micTrack = null;
+  }
+
+  function runRecognition() {
+    recognition.lang = langSel.value;
+    try {
+      // Chrome can recognise speech from our raw microphone track; browsers that can't
+      // ignore the argument and use the default microphone with their usual processing.
+      recognition.start(micTrack ?? undefined);
+    } catch (err) {
+      if (err?.name === "InvalidStateError") return; // already running
+      recognition.start();
+    }
+  }
+
+  async function start() {
     prepareEngine();
+    listening = true;
+    toggleBtn.textContent = "Stop";
+    toggleBtn.classList.add("listening");
+    document.body.classList.add("listening");
+    setStatus("Starting microphone…");
+    try {
+      await openMic();
+    } catch (err) {
+      // Fall back to letting speech recognition open the microphone itself.
+      console.warn("getUserMedia failed, using default recognition input", err);
+      if (err?.name === "NotAllowedError") {
+        setStatus("Microphone access was denied.", true);
+        stop();
+        return;
+      }
+    }
+    if (!listening) return closeMic();
+
     recognition = new Recognition();
-    recognition.lang = "en-US";
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
@@ -261,28 +357,35 @@ for (const tab of document.querySelectorAll(".tab")) {
       } else setStatus(`Speech recognition: ${event.error}`, true);
     };
     // Browsers end recognition after a pause or ~60 s; restart while the user wants to listen.
+    // Restarting also applies a changed accent.
     recognition.onend = () => {
-      if (listening) {
-        try { recognition.start(); } catch { /* already started */ }
-      }
+      if (listening) runRecognition();
     };
 
-    listening = true;
-    recognition.start();
-    toggleBtn.textContent = "Stop";
-    toggleBtn.classList.add("listening");
-    document.body.classList.add("listening");
+    runRecognition();
     setStatus("Listening…");
   }
 
   function stop() {
     listening = false;
     recognition?.stop();
+    recognition = null;
+    closeMic();
     toggleBtn.textContent = "Start";
     toggleBtn.classList.remove("listening");
     document.body.classList.remove("listening");
     if (!statusEl.classList.contains("error")) setStatus("Stopped");
   }
+
+  langSel.addEventListener("change", () => {
+    try { localStorage.setItem("liveLang", langSel.value); } catch { /* storage blocked */ }
+    recognition?.stop(); // onend restarts it with the new accent
+  });
+  micSel.addEventListener("change", async () => {
+    if (!listening) return;
+    stop();
+    await start();
+  });
 
   toggleBtn.addEventListener("click", () => (listening ? stop() : start()));
   $("liveShowEn").addEventListener("change", (e) => stage.classList.toggle("hide-en", !e.target.checked));
