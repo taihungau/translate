@@ -32,10 +32,10 @@
     <!-- LIVE MODE -->
     <section id="live" class="panel active">
       <p class="hint">
-        Press <b>Start</b>, allow the microphone, and play the movie out loud. Each English line the
-        microphone hears is shown in Russian a moment later. Needs Chrome, Edge or Safari.
-        For better recognition, point the microphone at the speakers (a headset or earbud mic works
-        well) and watch the level bar: it should jump whenever someone speaks.
+        Press <b>Start</b>, allow the microphone, and play the movie out loud. Speech is recognised
+        on this computer by Whisper Large v3 Turbo (Chrome or Edge on a recent Mac or PC; a one-time
+        download of about 1.3 GB) and shown in Russian as it is spoken. Watch the level bar: it
+        should jump whenever someone speaks.
       </p>
       <div class="controls">
         <button id="liveToggle" class="primary">Start</button>
@@ -47,24 +47,6 @@
           <option value="1" selected>Russian text: large</option>
           <option value="1.3">Russian text: very large</option>
         </select>
-        <select id="liveAsr" aria-label="Speech recognition">
-          <option value="chrome">Speech: Chrome (online)</option>
-          <option value="moonshine-tiny">Speech: Moonshine Tiny (real-time, fastest)</option>
-          <option value="moonshine-base">Speech: Moonshine Base (real-time, recommended)</option>
-          <option value="whisper-tiny">Speech: Whisper Tiny (slower)</option>
-          <option value="whisper-base">Speech: Whisper Base (accurate, slower)</option>
-          <option value="distil-small">Speech: Distil-Whisper Small (accurate, slower)</option>
-          <option value="whisper-small">Speech: Whisper Small (slow, strong GPU)</option>
-          <option value="whisper-turbo">Speech: Whisper Large Turbo (very accurate, ~0.5 GB)</option>
-          <option value="whisper-turbo-full">Speech: Whisper Large Turbo full (~1.3 GB, slow to load)</option>
-        </select>
-        <select id="liveLang" aria-label="Accent of the film">
-          <option value="en-US">English (US)</option>
-          <option value="en-GB">English (UK)</option>
-          <option value="en-AU">English (Australia)</option>
-          <option value="en-CA">English (Canada)</option>
-          <option value="en-IN">English (India)</option>
-        </select>
         <select id="liveMic" aria-label="Microphone"><option value="">Default microphone</option></select>
         <select id="liveBoost" aria-label="Microphone boost">
           <option value="1">Mic boost: off</option>
@@ -75,7 +57,6 @@
         </select>
         <span class="level" title="Microphone level: it should jump when the actors speak"><i id="liveLevel"></i></span>
         <button id="liveFullscreen">Fullscreen</button>
-        <button id="liveSave" title="Download the chosen models now, so they work offline in the cinema">Save for offline</button>
         <span id="liveStatus" class="status"></span>
       </div>
 

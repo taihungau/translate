@@ -1,54 +1,35 @@
-// On-device speech recognition: captures microphone audio at 16 kHz, cuts it into chunks at
-// natural pauses, and transcribes them with Whisper or Moonshine in a worker (asr-worker.js).
+// Speech recognition with Whisper Large v3 Turbo running in the browser (WebGPU) through
+// transformers.js. Microphone audio is captured at 16 kHz and cut into stretches of 2-12 s at
+// natural pauses: Whisper is most accurate with several seconds of context. While a stretch is
+// still being spoken, Whisper re-reads it whenever it is free, so the text updates live.
 // No audio is thrown away: in a cinema, dialogue sits on top of music and effects, so a
 // loudness gate would miss words. Loudness is only used to choose where to cut.
 
-export const LOCAL_MODELS = {
-  "moonshine-tiny": { kind: "moonshine", repos: ["onnx-community/moonshine-tiny-ONNX"] },
-  "moonshine-base": { kind: "moonshine", repos: ["onnx-community/moonshine-base-ONNX"] },
-  "whisper-tiny": { kind: "whisper", repos: ["onnx-community/whisper-tiny.en", "Xenova/whisper-tiny.en"] },
-  "whisper-base": { kind: "whisper", repos: ["onnx-community/whisper-base.en", "Xenova/whisper-base.en"] },
-  "whisper-small": { kind: "whisper", repos: ["onnx-community/whisper-small.en", "Xenova/whisper-small.en"] },
-  "distil-small": { kind: "whisper", repos: ["onnx-community/distil-small.en", "Xenova/distil-small.en"] },
-  "whisper-turbo": {
-    kind: "whisper-multi", // multilingual model: told to transcribe English
-    repos: ["onnx-community/whisper-large-v3-turbo"],
-    // 4-bit weights (~0.5 GB): far quicker to download and load onto the GPU than half
-    // precision, with a small accuracy cost.
-    dtypes: {
-      webgpu: [{ encoder_model: "q4", decoder_model_merged: "q4" }, { encoder_model: "q4f16", decoder_model_merged: "q4f16" }],
-      wasm: ["q4", "q8"],
-    },
-  },
-  "whisper-turbo-full": {
-    kind: "whisper-multi",
-    repos: ["onnx-community/whisper-large-v3-turbo"],
-    // Half precision, ~1.3 GB (full precision would be ~2.5 GB).
-    dtypes: {
-      webgpu: [{ encoder_model: "fp16", decoder_model_merged: "q4" }],
-      wasm: ["q8"],
-    },
-  },
+export const MODEL = {
+  repo: "onnx-community/whisper-large-v3-turbo",
+  // The settings of the official transformers.js WebGPU demo for this model: half-precision
+  // encoder (accuracy) and 4-bit decoder (speed). About 1.3 GB, downloaded once.
+  dtype: { encoder_model: "fp16", decoder_model_merged: "q4" },
 };
 
 const SAMPLE_RATE = 16000;
 const FRAME = 480; // 30 ms
 const FRAME_MS = 30;
-const PAUSE_MS = 250; // a dip this long counts as a pause between phrases
-const MIN_CHUNK_MS = 1500; // enough context for accuracy, short enough to stay real-time
-const MAX_CHUNK_MS = 4500; // long run-on speech is cut at its quietest point before this
-const MAX_FINAL_MS = 25000; // Whisper's window is 30 s; one call can correct this much
-const INTERIM_EVERY_MS = 250; // in practice: as soon as the model is free again
+const PAUSE_MS = 350; // a dip this long counts as a pause between sentences
+const MIN_CHUNK_MS = 2000; // Whisper needs a few seconds of context to be accurate
+const MAX_CHUNK_MS = 12000; // long run-on speech is cut at its quietest point before this
+const MAX_FINAL_MS = 25000; // Whisper's window is 30 s
+const FIRST_LIVE_MS = 1000; // start showing live text after this much of a stretch
 const SILENT_RMS = 0.002; // below this nothing is audible at all
 
-// Whisper and Moonshine invent text for music, applause and silence.
+// Whisper invents text for music, applause and silence.
 const JUNK = /^(thank you\.?|thanks for watching!?|you\.?|bye\.?|\.+|-+|so\.?)$/i;
 
 export function cleanTranscript(text) {
   const cleaned = text
     .replace(/\[[^\]]*\]|\([^)]*\)|\*[^*]*\*|♪+/g, " ") // [Music], (laughs), *sighs*, ♪
     .replace(/\s+/g, " ")
-    // Over music the models sometimes loop: "go go go go", "I'm here. I'm here. I'm here."
+    // Over music the model sometimes loops: "go go go go", "I'm here. I'm here. I'm here."
     .replace(/(\b.{2,40}?)(?:[\s,.!?]+\1\b){2,}/gi, "$1")
     .trim();
   return JUNK.test(cleaned) ? "" : cleaned;
@@ -65,114 +46,86 @@ class Capture extends AudioWorkletProcessor {
 registerProcessor("capture", Capture);
 `;
 
-// One speech model running in its own worker (asr-worker.js).
-class ModelWorker {
-  constructor(onMessage) {
-    this.worker = new Worker(new URL("./asr-worker.js", import.meta.url), { type: "module" });
-    this.busy = 0;
-    this.key = null;
-    this.ready = null;
-    this.worker.onmessage = ({ data }) => {
-      if (data.type === "ready") return this.settle?.resolve(data.device);
-      if (data.type === "error" && data.id === undefined && this.settle) return this.settle.reject(new Error(data.message));
-      if (data.type === "result" || (data.type === "error" && data.id !== undefined)) this.busy--;
-      onMessage(data);
-    };
-  }
-
-  /** Download (first time only) and load a model. Resolves with "webgpu" or "wasm". */
-  load(key) {
-    if (this.key === key && this.ready) return this.ready;
-    this.key = key;
-    this.ready = new Promise((resolve, reject) => (this.settle = { resolve, reject }))
-      .finally(() => (this.settle = null));
-    this.ready.catch(() => { this.ready = null; this.key = null; });
-    this.worker.postMessage({ type: "load", key, ...LOCAL_MODELS[key] });
-    return this.ready;
-  }
-
-  transcribe(msg) {
-    this.busy++;
-    this.worker.postMessage({ type: "transcribe", ...msg }, [msg.audio.buffer]);
-  }
-}
-
-// Whisper always processes a padded 30-second window, so it can't update many times a second.
-// With a Whisper model, this fast model produces the live partial text and Whisper the final
-// (more accurate) text of each line.
-const FAST_PARTIALS_MODEL = "moonshine-tiny";
-
 export class LocalRecognizer {
   /**
-   * @param {{onInterim(text: string): void, onFinal(text: string): void,
-   *          onStatus(text: string): void, onError(message: string): void,
-   *          onTiming?(ms: number, final: boolean): void}} handlers
+   * @param {{onInterim(text: string): void, onFinal(text: string, opts: {show: boolean}): void,
+   *          onError(message: string): void,
+   *          onProgress(p: {pct: number | null, text: string}): void,
+   *          onTiming?(ms: number): void}} handlers
    */
   constructor(handlers) {
     this.h = handlers;
-    this.main = null; // model for final lines (and partials when it is fast enough)
-    this.fast = null; // Moonshine for partials when the main model is Whisper
+    this.worker = null;
+    this.ready = null;
+    this.busy = 0;
     this.nextId = 0;
-    this.chunkSeq = 0; // number of the chunk currently being recorded
-    this.liveChunk = -1; // newest chunk whose text is on screen
-    this.partials = new Map(); // chunk -> latest partial text
-    this.finals = new Map(); // chunk -> final text
-    this.cutTimes = new Map(); // chunk -> when it ended
     this.ctx = null;
-    this.loading = {}; // per worker: download/warm-up progress of the current load
-    this.batchFinals = false; // true for Whisper: see cut()
-    this.pendingFinal = []; // finished-line audio waiting for Whisper
+    this.chunkSeq = 0; // number of the stretch currently being recorded
+    this.liveChunk = -1; // newest stretch whose text is on screen
+    this.partials = new Map(); // stretch -> latest live text
+    this.finals = new Map(); // stretch -> final text
+    this.cutTimes = new Map(); // stretch -> when it ended
+    this.pendingFinal = []; // finished audio waiting for Whisper to be free
     this.pendingChunk = -1;
   }
 
-  get partialsWorker() {
-    return this.fast?.ready && this.fast.key === FAST_PARTIALS_MODEL ? this.fast : this.main;
+  /** Download (first time only) and load the model. Resolves with "webgpu". */
+  load() {
+    if (this.ready) return this.ready;
+    this.worker = new Worker(new URL("./asr-worker.js", import.meta.url), { type: "module" });
+    this.ready = new Promise((resolve, reject) => {
+      this.worker.onmessage = ({ data }) => {
+        if (data.type === "progress") {
+          const pct = data.total ? Math.round((data.loaded / data.total) * 100) : 0;
+          this.h.onProgress({
+            pct,
+            text: data.saved
+              ? `Loading the speech model… ${pct}%`
+              : `Downloading the speech model (one time only)… ${pct}% · ${Math.round(data.loaded / 1e6)} of ${Math.round(data.total / 1e6)} MB`,
+          });
+        } else if (data.type === "phase") {
+          this.h.onProgress({ pct: null, text: "Preparing the speech model on the GPU…" });
+        } else if (data.type === "ready") {
+          resolve(data.device);
+        } else if (data.type === "error" && data.id === undefined) {
+          reject(new Error(data.message));
+        } else {
+          this.onMessage(data);
+        }
+      };
+    });
+    this.ready.catch(() => {
+      this.worker?.terminate();
+      this.worker = null;
+      this.ready = null; // allow another try
+    });
+    this.worker.postMessage({ type: "load", ...MODEL });
+    return this.ready;
   }
 
-  // The caption on screen is the previous line (Whisper's corrected text once it arrives)
-  // followed by the live words of the current line, like rolling TV captions. Partials and
-  // finals come from different models and finish out of order; this keeps them in place.
-  onMessage = (data, tag = "main") => {
-    if (data.type === "progress" || data.type === "phase") {
-      // Combine the progress of every model being loaded (Whisper + its live-text helper).
-      const entry = (this.loading[tag] ??= { loaded: 0, total: 0, saved: true, warm: false });
-      if (data.type === "phase") entry.warm = true;
-      else Object.assign(entry, { loaded: data.loaded, total: data.total, saved: data.saved });
-      const all = Object.values(this.loading);
-      if (all.every((e) => e.warm)) {
-        const where = data.device === "webgpu" ? "GPU" : "processor";
-        this.h.onProgress?.({ pct: null, text: `Preparing the model on the ${where}…` });
-        return;
-      }
-      const loaded = all.reduce((n, e) => n + (e.warm ? e.total : e.loaded), 0);
-      const total = all.reduce((n, e) => n + e.total, 0);
-      const pct = total ? Math.round((loaded / total) * 100) : 0;
-      const text = all.every((e) => e.saved)
-        ? `Loading saved speech model… ${pct}%`
-        : `Downloading speech model… ${pct}% · ${Math.round(loaded / 1e6)} of ${Math.round(total / 1e6)} MB (only the first time)`;
-      this.h.onProgress?.({ pct, text });
-      return;
-    }
+  // The caption on screen is the previous sentence followed by the live words of the current
+  // one, like rolling TV captions.
+  onMessage(data) {
     if (data.type === "error") {
+      this.busy--;
       this.h.onError(data.message);
+      queueMicrotask(() => this.flushFinal());
       return;
     }
     if (data.type !== "result") return;
+    this.busy--;
+    this.h.onTiming?.(data.ms);
+    queueMicrotask(() => this.flushFinal()); // Whisper is free again
 
-    this.h.onTiming?.(data.ms, data.final);
-    if (data.final) queueMicrotask(() => this.flushFinal()); // Whisper is free again
     const text = cleanTranscript(data.text);
     const c = data.chunk;
     if (data.final) {
       this.finals.set(c, text);
       if (!text) return;
       if (c >= this.liveChunk) {
-        // Nothing newer is on screen yet: show this line as finished.
         this.liveChunk = c;
         this.h.onFinal(text, { show: true });
       } else {
-        // A newer line is already being shown live: remember this one for context and
-        // put its corrected text into the rolling caption.
         this.h.onFinal(text, { show: false });
         if (c === this.liveChunk - 1) this.emitCaption();
       }
@@ -184,41 +137,16 @@ export class LocalRecognizer {
     }
     for (const k of this.partials.keys()) if (k < this.liveChunk - 2) this.partials.delete(k);
     for (const k of this.finals.keys()) if (k < this.liveChunk - 2) this.finals.delete(k);
-  };
+  }
 
   emitCaption() {
     const c = this.liveChunk;
     const live = this.finals.get(c) || this.partials.get(c) || "";
-    // Keep the previous line only if it ended a moment ago, not after a long silence.
+    // Keep the previous sentence only if it ended a moment ago, not after a long silence.
     const prevEnded = this.cutTimes.get(c - 1) ?? 0;
     const prev = performance.now() - prevEnded < 3500 ? this.finals.get(c - 1) || this.partials.get(c - 1) || "" : "";
     const caption = [prev, live].filter(Boolean).join(" ");
     if (caption) this.h.onInterim(caption);
-  }
-
-  /** Download (first time only) and load the chosen model. Resolves with "webgpu" or "wasm". */
-  async load(modelKey) {
-    this.loading = {};
-    this.batchFinals = LOCAL_MODELS[modelKey].kind.startsWith("whisper");
-    this.pendingFinal = [];
-    this.main ??= new ModelWorker((d) => this.onMessage(d, "main"));
-    if (this.main.key !== modelKey || !this.main.ready) this.h.onStatus("Loading speech model…");
-    const main = this.main.load(modelKey);
-    let fast = Promise.resolve();
-    if (LOCAL_MODELS[modelKey].kind.startsWith("whisper")) {
-      // Load the live-text model at the same time, not after Whisper.
-      this.fast ??= new ModelWorker((d) => this.onMessage(d, "fast"));
-      fast = this.fast.load(FAST_PARTIALS_MODEL).catch((err) => {
-        // Still works without it, just with slower partials.
-        console.warn("Fast partials model unavailable:", err);
-      });
-    }
-    try {
-      const [device] = await Promise.all([main, fast]);
-      return device;
-    } finally {
-      this.h.onLoadDone?.();
-    }
   }
 
   async start(stream) {
@@ -229,21 +157,17 @@ export class LocalRecognizer {
     URL.revokeObjectURL(url);
     const node = new AudioWorkletNode(this.ctx, "capture");
     this.ctx.createMediaStreamSource(stream).connect(node);
-    this.resetVad();
+    this.carry = new Float32Array(0);
+    this.chunk = [];
+    this.levels = [];
+    this.quietRun = 0;
+    this.pendingFinal = [];
     node.port.onmessage = ({ data }) => this.feed(data);
   }
 
   stop() {
     this.ctx?.close().catch(() => {});
     this.ctx = null;
-  }
-
-  resetVad() {
-    this.carry = new Float32Array(0);
-    this.chunk = []; // frames since the last cut
-    this.levels = []; // loudness of each frame in the chunk
-    this.quietRun = 0;
-    this.lastInterim = performance.now();
   }
 
   feed(samples) {
@@ -271,9 +195,7 @@ export class LocalRecognizer {
     this.quietRun = rms < Math.max(recentPeak * 0.35, 0.0025) ? this.quietRun + 1 : 0;
 
     const ms = this.chunk.length * FRAME_MS;
-    const audible = this.levels.some((l) => l > SILENT_RMS);
-
-    if (!audible) {
+    if (!this.levels.some((l) => l > SILENT_RMS)) {
       // Real silence: nothing to transcribe, keep only a short lead-in.
       if (ms > 2000) this.keepFrom(this.chunk.length - 10);
       return;
@@ -283,14 +205,13 @@ export class LocalRecognizer {
       this.cut(this.chunk.length - Math.floor(this.quietRun / 2));
     } else if (ms >= MAX_CHUNK_MS) {
       this.cut(this.quietestPoint());
-    } else if (ms >= 450 && this.partialsWorker.busy === 0 && performance.now() - this.lastInterim >= INTERIM_EVERY_MS) {
-      // Partial result so subtitles start while the sentence is still going.
-      this.lastInterim = performance.now();
-      this.send(this.chunk, false);
+    } else if (ms >= FIRST_LIVE_MS && this.busy === 0 && !this.pendingFinal.length && this.worker) {
+      // Live text: re-read the current stretch whenever Whisper is free.
+      this.send(this.chunk, false, this.chunkSeq);
     }
   }
 
-  // Index of the quietest ~150 ms in the last 2 seconds of the chunk.
+  // Index of the quietest ~150 ms in the last 2 seconds of the stretch.
   quietestPoint() {
     const n = this.levels.length;
     let best = n - 1;
@@ -312,23 +233,17 @@ export class LocalRecognizer {
     this.cutTimes.set(id, performance.now());
     for (const k of this.cutTimes.keys()) if (k < id - 3) this.cutTimes.delete(k);
     if (audible) {
-      if (this.batchFinals) {
-        // Whisper is slow per call but costs the same for 2 s or 25 s of audio: collect
-        // finished lines while it is busy and correct them all in one go when it is free.
-        // That keeps it from falling behind the film; Moonshine shows the live words meanwhile.
-        this.pendingFinal.push(...head);
-        this.pendingChunk = id;
-        this.flushFinal();
-      } else {
-        this.send(head, true, id);
-      }
+      // One Whisper call costs the same for 2 s or 25 s of audio: while it is busy, collect
+      // finished stretches and transcribe them together, so it never falls behind the film.
+      this.pendingFinal.push(...head);
+      this.pendingChunk = id;
+      this.flushFinal();
     }
     this.keepFrom(at);
-    this.lastInterim = performance.now();
   }
 
   flushFinal() {
-    if (!this.pendingFinal.length || !this.main || this.main.busy > 0) return;
+    if (!this.pendingFinal.length || !this.worker || this.busy > 0) return;
     const maxFrames = Math.floor(MAX_FINAL_MS / FRAME_MS);
     const frames = this.pendingFinal.length > maxFrames ? this.pendingFinal.slice(-maxFrames) : this.pendingFinal;
     this.pendingFinal = [];
@@ -341,24 +256,10 @@ export class LocalRecognizer {
     this.quietRun = 0;
   }
 
-  send(frames, final, chunk = this.chunkSeq) {
+  send(frames, final, chunk) {
     const audio = new Float32Array(frames.length * FRAME);
     frames.forEach((f, k) => audio.set(f, k * FRAME));
-    const worker = final ? this.main : this.partialsWorker;
-    worker.transcribe({ id: this.nextId++, audio, final, chunk });
-  }
-
-}
-
-/** True when every model the given option needs is already saved in this browser. */
-export async function isSavedOnDevice(modelKey) {
-  const needs = [modelKey];
-  if (LOCAL_MODELS[modelKey]?.kind.startsWith("whisper")) needs.push(FAST_PARTIALS_MODEL);
-  try {
-    const urls = (await (await caches.open("transformers-cache")).keys()).map((r) => r.url);
-    // A saved model file (.onnx), not just its small config files.
-    return needs.every((key) => LOCAL_MODELS[key].repos.some((repo) => urls.some((u) => u.includes(`/${repo}/`) && u.endsWith(".onnx"))));
-  } catch {
-    return false;
+    this.busy++;
+    this.worker.postMessage({ type: "transcribe", id: this.nextId++, audio, final, chunk }, [audio.buffer]);
   }
 }

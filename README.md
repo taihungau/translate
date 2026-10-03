@@ -33,48 +33,28 @@ Pick the engine at the top of the page:
 
 ## Speech recognition (live mode)
 
-Also chosen on the page, and free either way:
+Speech is recognised on the device by **Whisper Large v3 Turbo**, running in the browser with
+[transformers.js](https://github.com/huggingface/transformers.js) on the GPU (WebGPU), using
+the settings of the library's official demo for this model: half-precision encoder, 4-bit
+decoder. It needs Chrome or Edge on a computer with WebGPU (any recent Mac or PC). The model is
+downloaded once (about 1.3 GB) when the page first opens, then kept in the browser; a progress
+bar shows the download and the GPU preparation.
 
-- **Chrome (default).** The browser's own recognizer, which sends audio to Google. Fast, but it
-  struggles with music, effects and echo.
-- **On device: Moonshine Tiny/Base, Whisper Tiny/Base/Small, Distil-Whisper Small, Whisper
-  Large v3 Turbo.** Open models that run in the
-  browser with [transformers.js](https://github.com/huggingface/transformers.js), on the GPU
-  (WebGPU) when available. They usually cope better with film sound. The first use downloads
-  the model (tens of MB for Tiny, about 0.5 GB for Large Turbo in its default 4-bit form, or
-  1.3 GB for the full version), then it is cached. All audio is
-  transcribed (nothing is dropped by a loudness gate); it is cut into 1.5–4.5 s chunks at pauses,
-  or at the quietest moment during continuous music, and partial results are requested again as
-  soon as the model is free (about every 0.25 s). For real time use **Moonshine**: it processes
-  only the audio it is given, while Whisper always processes a padded 30-second window, so each
-  Whisper update costs the same however short the line. So when a Whisper model is chosen, the
-  app also runs Moonshine Tiny: Moonshine shows the words live as they are spoken, and Whisper's
-  more accurate text replaces each line when it finishes. While Whisper is busy, finished lines
-are collected and corrected together in its next call (one call costs the same for up to
-~25 s of audio), so slow models like Large Turbo never fall behind the film. The caption rolls: the previous line
-  (corrected) followed by the live words of the current one. The status line shows how long
-  live updates and finished lines take on your computer.
+Audio is cut into 2–12 s stretches at natural pauses (Whisper is most accurate with several
+seconds of context), and nothing is dropped by a loudness gate. While a stretch is still being
+spoken, Whisper re-reads it whenever it is free, so the caption updates live; the caption rolls
+(previous sentence, then the current one). Finished stretches that arrive while Whisper is busy
+are transcribed together in its next call, so it never falls behind the film.
 
 The microphone is opened without call-style echo cancellation and noise suppression (which
 remove film dialogue), with a selectable boost (default 3×) followed by a compressor so quiet
 dialogue is lifted without loud effects clipping. The computer's own microphone (for example
 "MacBook Pro Microphone") is preferred over the system default, and the choice is remembered.
 
-## Saving models and working offline
+## Offline use
 
-Downloaded models are kept in the browser (transformers.js stores them in Cache Storage), so
-each model downloads only once. The page asks the browser to make that storage persistent so
-it isn't cleared when space runs low, and a service worker keeps the app and its library
-available offline, which matters in a cinema without signal.
-
-Press **Save for offline** at home on Wi-Fi: it downloads the speech and translation models
-for the current settings without starting the microphone, and reports the space used. When a
-model is already saved, the status says "Loading saved speech model" rather than
-"Downloading". A saved model is loaded in the background as soon as the page opens (or when
-you pick it), so Start is instant; it then stays loaded across Stop and Start. Whisper and its
-live-text helper load in parallel, and on GPUs with 16-bit float support (most recent ones,
-including Apple silicon) the half-precision encoder is used, halving the download. Chrome's online speech recognition still needs a connection; the on-device
-models and the built-in or on-device translators do not.
+After the first download the model is kept in the browser, and a service worker keeps the app
+and its library available offline, so it works in a cinema without signal.
 
 ## Run it
 

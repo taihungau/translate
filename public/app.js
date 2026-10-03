@@ -1,5 +1,5 @@
 import { parseSubtitles, toSrt, findCueAt } from "./subtitles.js";
-import { LocalRecognizer, isSavedOnDevice } from "./local-asr.js";
+import { LocalRecognizer } from "./local-asr.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -230,14 +230,12 @@ for (const tab of document.querySelectorAll(".tab")) {
 
 // ---------------------------------------------------------------- live mode
 (() => {
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const toggleBtn = $("liveToggle");
   const statusEl = $("liveStatus");
   const enEl = $("liveEn");
   const ruEl = $("liveRu");
   const stage = $("liveStage");
 
-  let recognition = null;
   let listening = false;
   let fadeTimer = null;
   const recentEnglish = [];
@@ -255,11 +253,6 @@ for (const tab of document.querySelectorAll(".tab")) {
   function setStatus(text, isError = false) {
     statusEl.textContent = text;
     statusEl.classList.toggle("error", isError);
-  }
-
-  if (!Recognition) {
-    toggleBtn.disabled = true;
-    setStatus("Speech recognition is not available in this browser. Try Chrome or Edge, or use the video mode.", true);
   }
 
   function showEnglish(finalText, interimText = "") {
@@ -344,50 +337,35 @@ for (const tab of document.querySelectorAll(".tab")) {
     }
   }
 
-  const asrSel = $("liveAsr");
-  const langSel = $("liveLang");
   const local = new LocalRecognizer({
     onInterim: (text) => handleInterim(text),
     onFinal: (text, opts) => addPhrase(text, opts),
-    onStatus: (text) => setStatus(text),
     onError: (message) => setStatus(message, true),
     onProgress: ({ pct, text }) => asrBar.set(pct, text),
-    onLoadDone: () => asrBar.done(),
-    // Show how long updates take, so models can be compared on this computer.
-    onTiming: (ms, final) => {
-      const list = final ? timings.final : timings.partial;
-      list.push(ms);
-      if (list.length > 8) list.shift();
-      const avg = (l) => Math.round(l.reduce((x, y) => x + y, 0) / l.length);
-      if (!listening || statusEl.classList.contains("error") || !timings.partial.length) return;
-      const where = localDevice === "webgpu" ? "GPU" : "CPU";
-      const lines = timings.final.length ? ` · lines ~${avg(timings.final)} ms` : "";
-      const slow = avg(timings.partial) > 900 ? " (slow: try Moonshine)" : "";
-      setStatus(`Listening on ${where} · live text ~${avg(timings.partial)} ms${lines}${slow}`);
+    onTiming: (ms) => {
+      if (listening && !statusEl.classList.contains("error")) setStatus(`Listening · Whisper ~${(ms / 1000).toFixed(1)} s per update`);
     },
   });
-  const timings = { partial: [], final: [] };
-  let localDevice = "";
+  // Load (and the first time, download) the model as soon as the page opens.
+  function loadModel() {
+    return local.load().then(
+      () => {
+        asrBar.done();
+        if (!listening) setStatus("Ready. Press Start.");
+      },
+      (err) => {
+        asrBar.done();
+        setStatus(err.message, true);
+        throw err;
+      },
+    );
+  }
+  loadModel().catch(() => {});
   const micSel = $("liveMic");
   const levelEl = $("liveLevel");
   let micStream = null;
   let micTrack = null;
   let stopMeter = null;
-
-  try {
-    langSel.value = localStorage.getItem("liveLang") || "en-US";
-    asrSel.value = localStorage.getItem("liveAsr") || "chrome";
-    if (!asrSel.value) asrSel.value = "chrome";
-  } catch { /* storage blocked */ }
-  const usesChrome = () => asrSel.value === "chrome";
-  langSel.hidden = !usesChrome(); // on-device models are English-only and handle accents themselves
-  if (!Recognition) {
-    // No browser speech recognition: on-device models still work.
-    asrSel.querySelector('[value="chrome"]').disabled = true;
-    if (usesChrome()) asrSel.value = "whisper-base";
-    toggleBtn.disabled = false;
-    setStatus("");
-  }
 
   async function listMics() {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -447,8 +425,15 @@ for (const tab of document.querySelectorAll(".tab")) {
     comp.ratio.value = 6;
     comp.attack.value = 0.003;
     comp.release.value = 0.25;
+    // Limiter: a loud scene must never clip, distorted audio is what hurts recognition most.
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -3;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.001;
+    limiter.release.value = 0.1;
     const out = ctx.createMediaStreamDestination();
-    ctx.createMediaStreamSource(stream).connect(gain).connect(comp).connect(out);
+    ctx.createMediaStreamSource(stream).connect(gain).connect(comp).connect(limiter).connect(out);
     return { ctx, gain, stream: out.stream };
   }
 
@@ -478,18 +463,6 @@ for (const tab of document.querySelectorAll(".tab")) {
     rawStream = micStream = micTrack = boostGraph = null;
   }
 
-  function runRecognition() {
-    recognition.lang = langSel.value;
-    try {
-      // Chrome can recognise speech from our raw microphone track; browsers that can't
-      // ignore the argument and use the default microphone with their usual processing.
-      recognition.start(micTrack ?? undefined);
-    } catch (err) {
-      if (err?.name === "InvalidStateError") return; // already running
-      recognition.start();
-    }
-  }
-
   async function start() {
     prepareEngine();
     keepModelsSaved();
@@ -502,74 +475,30 @@ for (const tab of document.querySelectorAll(".tab")) {
     try {
       await openMic();
     } catch (err) {
-      // Fall back to letting speech recognition open the microphone itself.
-      console.warn("getUserMedia failed, using default recognition input", err);
-      if (err?.name === "NotAllowedError") {
-        setStatus("Microphone access was denied.", true);
-        stop();
-        return;
-      }
-    }
-    if (!listening) return closeMic();
-
-    if (!usesChrome()) {
-      if (!micStream) {
-        setStatus("Couldn't open the microphone.", true);
-        stop();
-        return;
-      }
-      try {
-        const device = await local.load(asrSel.value);
-        localDevice = device;
-        timings.partial.length = timings.final.length = 0;
-        if (!listening) return;
-        await local.start(micStream);
-        setStatus(device === "webgpu" ? "Listening (on device, GPU)…" : "Listening (on device, CPU: may lag)…");
-      } catch (err) {
-        setStatus(err.message, true);
-        stop();
-      }
+      setStatus(err?.name === "NotAllowedError" ? "Microphone access was denied." : `Couldn't open the microphone: ${err.message}`, true);
+      stop();
       return;
     }
-
-    recognition = new Recognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-
-    recognition.onresult = (event) => {
-      let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        const transcript = result[0].transcript.trim();
-        if (!transcript) continue;
-        if (result.isFinal) addPhrase(transcript);
-        else interim += transcript + " ";
-      }
-      interim = interim.trim();
-      if (interim) handleInterim(interim);
-    };
-    recognition.onerror = (event) => {
-      if (event.error === "no-speech" || event.error === "aborted") return;
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        setStatus("Microphone access was denied.", true);
-        stop();
-      } else setStatus(`Speech recognition: ${event.error}`, true);
-    };
-    // Browsers end recognition after a pause or ~60 s; restart while the user wants to listen.
-    // Restarting also applies a changed accent.
-    recognition.onend = () => {
-      if (listening) runRecognition();
-    };
-
-    runRecognition();
-    setStatus("Listening…");
+    if (!listening) return closeMic();
+    if (!micStream) {
+      setStatus("Couldn't open the microphone.", true);
+      stop();
+      return;
+    }
+    try {
+      setStatus("Loading the speech model…");
+      await loadModel();
+      if (!listening) return;
+      await local.start(micStream);
+      setStatus("Listening…");
+    } catch (err) {
+      setStatus(err.message, true);
+      stop();
+    }
   }
 
   function stop() {
     listening = false;
-    recognition?.stop();
-    recognition = null;
     local.stop();
     closeMic();
     toggleBtn.textContent = "Start";
@@ -580,36 +509,8 @@ for (const tab of document.querySelectorAll(".tab")) {
     if (!statusEl.classList.contains("error")) setStatus("Stopped");
   }
 
-  langSel.addEventListener("change", () => {
-    try { localStorage.setItem("liveLang", langSel.value); } catch { /* storage blocked */ }
-    recognition?.stop(); // onend restarts it with the new accent
-  });
-  // Get the chosen model ready in the background so Start is instant. Only models already
-  // saved on this device are loaded this way, so nothing big is downloaded unasked.
-  async function warmUp() {
-    if (listening || usesChrome() || !(await isSavedOnDevice(asrSel.value))) return;
-    try {
-      const key = asrSel.value;
-      await local.load(key);
-      if (!listening && asrSel.value === key) setStatus("Speech model ready. Press Start.");
-    } catch { /* reported again when Start is pressed */ }
-  }
-  warmUp();
-  if (engineSel.value === "opus") {
-    caches.open("transformers-cache")
-      .then((c) => c.keys())
-      .then((keys) => keys.some((r) => r.url.includes("/opus-mt-en-ru/")) && opusTranslate([], "load"))
-      .catch(() => {});
-  }
+  if (engineSel.value === "opus") opusTranslate([], "load").catch(() => {});
 
-  asrSel.addEventListener("change", async () => {
-    try { localStorage.setItem("liveAsr", asrSel.value); } catch { /* storage blocked */ }
-    langSel.hidden = !usesChrome();
-    warmUp();
-    if (!listening) return;
-    stop();
-    await start();
-  });
   boostSel.addEventListener("change", () => {
     try { localStorage.setItem("liveBoost", boostSel.value); } catch { /* storage blocked */ }
     if (boostGraph) boostGraph.gain.gain.value = Number(boostSel.value) || 1;
@@ -632,28 +533,6 @@ for (const tab of document.querySelectorAll(".tab")) {
   // The lock is released whenever the page is hidden; take it again when it comes back.
   document.addEventListener("visibilitychange", () => {
     if (listening && document.visibilityState === "visible") keepAwake();
-  });
-
-  // Download everything the current settings need, without starting the microphone.
-  const saveBtn = $("liveSave");
-  saveBtn.addEventListener("click", async () => {
-    saveBtn.disabled = true;
-    try {
-      const persisted = await keepModelsSaved();
-      if (engineSel.value === "chrome") prepareEngine(); // Chrome's Russian language pack
-      if (engineSel.value === "opus") {
-        setStatus("Saving the translation model…");
-        await opusTranslate([], "load");
-      }
-      if (!usesChrome()) await local.load(asrSel.value);
-      const { usage = 0 } = (await navigator.storage?.estimate?.()) ?? {};
-      setStatus(`Saved on this device (${Math.round(usage / 1e6)} MB in total)` +
-        (persisted ? ". It stays until you clear site data." : ". The browser may clear it if storage runs low."));
-    } catch (err) {
-      setStatus(err.message, true);
-    } finally {
-      saveBtn.disabled = false;
-    }
   });
 
   const sizeSel = $("liveSize");
