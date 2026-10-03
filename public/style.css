@@ -31,6 +31,9 @@ h1 { margin: 0 0 12px; font-size: 1.5rem; }
 h1 .langs { color: var(--accent); font-weight: 600; font-size: 1rem; margin-left: 6px; }
 h2 { font-size: 1.05rem; margin: 24px 0 8px; }
 
+.title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 12px; }
+.title-row h1 { margin: 0; margin-right: auto; }
+.engine { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9rem; }
 nav { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
 .tab {
   border: none; background: none; color: var(--muted);

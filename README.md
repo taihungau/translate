@@ -15,9 +15,22 @@ It has two modes:
   + English) are drawn over the video, including in fullscreen. You can download the result as
   a Russian `.srt` file at any time.
 
+## Translation engines
+
+Pick the engine at the top of the page:
+
+- **Chrome built-in (default, free).** Desktop Chrome 138 or later has an on-device
+  translator. No API key or server is needed, and the first use downloads Chrome's Russian
+  language pack. Translation is literal and doesn't use earlier lines for context.
+- **Claude.** More natural, context-aware subtitles. It needs `ANTHROPIC_API_KEY` set on the
+  server, and is the only option in browsers without the built-in translator (Safari, Firefox,
+  and Chrome on phones).
+
+Speech recognition in live mode is built into the browser and is free either way.
+
 ## Run it
 
-Requires Node.js 18 or later and an Anthropic API key.
+Requires Node.js 18 or later. An Anthropic API key is only needed for the Claude engine.
 
 ```bash
 npm install

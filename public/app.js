@@ -18,13 +18,93 @@ function askForCode() {
   return askingForCode;
 }
 
-async function translate(lines, context = [], retried = false) {
+// ---------------------------------------------------------------- translation engines
+// "chrome": Chrome's on-device Translator API (Chrome 138+ desktop). Free, no key, no server.
+// "claude": POST /api/translate, which calls Claude with the server's ANTHROPIC_API_KEY.
+const engineSel = $("engine");
+const engineStatus = $("engineStatus");
+const hasBuiltIn = "Translator" in self;
+const PAIR = { sourceLanguage: "en", targetLanguage: "ru" };
+
+function setEngineStatus(text, isError = false) {
+  engineStatus.textContent = text;
+  engineStatus.classList.toggle("error", isError);
+}
+
+if (!hasBuiltIn) {
+  engineSel.querySelector('[value="chrome"]').disabled = true;
+  engineSel.value = "claude";
+  setEngineStatus("This browser has no built-in translator; use desktop Chrome 138+ for free translation.");
+} else {
+  try { engineSel.value = localStorage.getItem("engine") || "chrome"; } catch { /* storage blocked */ }
+  if (engineSel.value === "chrome") setEngineStatus("Free, runs on this computer");
+}
+
+async function createBuiltIn() {
+  const availability = await Translator.availability(PAIR);
+  if (availability === "unavailable") {
+    throw new Error("Chrome can't translate English to Russian on this device. Switch to Claude.");
+  }
+  const translator = await Translator.create({
+    ...PAIR,
+    monitor(m) {
+      m.addEventListener("downloadprogress", (e) =>
+        setEngineStatus(`Downloading Russian language pack… ${Math.round(e.loaded * 100)}%`));
+    },
+  });
+  setEngineStatus("Free, runs on this computer");
+  return translator;
+}
+
+let builtIn = null;
+function getBuiltIn() {
+  builtIn ??= (async () => {
+    setEngineStatus("Preparing Chrome's translator…");
+    const slow = setTimeout(() => setEngineStatus(
+      "Chrome's translator is still getting ready. If this doesn't finish, switch to Claude.", true), 20000);
+    try {
+      return await createBuiltIn();
+    } finally {
+      clearTimeout(slow);
+    }
+  })().catch((err) => {
+    builtIn = null;
+    // The first download must start from a click; Start / choosing a file count as one.
+    const msg = err?.name === "NotAllowedError"
+      ? "Press Start (or choose the subtitle file again) to download Chrome's Russian language pack."
+      : err.message;
+    setEngineStatus(msg, true);
+    throw new Error(msg);
+  });
+  return builtIn;
+}
+
+/** Call from a click handler so Chrome may download its language pack. */
+export function prepareEngine() {
+  if (engineSel.value === "chrome") getBuiltIn().catch(() => {});
+}
+
+engineSel.addEventListener("change", () => {
+  try { localStorage.setItem("engine", engineSel.value); } catch { /* storage blocked */ }
+  if (engineSel.value === "chrome") { setEngineStatus("Free, runs on this computer"); prepareEngine(); }
+  else setEngineStatus("Uses the server's Anthropic API key");
+});
+
+async function translate(lines, context = []) {
+  if (engineSel.value === "chrome") {
+    const translator = await getBuiltIn();
+    return Promise.all(lines.map(async (l) => ({ id: l.id, text: l.text.trim() ? await translator.translate(l.text) : "" })));
+  }
+  return translateWithClaude(lines, context);
+}
+
+async function translateWithClaude(lines, context = [], retried = false) {
   const res = await fetch("/api/translate", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Access-Code": storedCode() },
     body: JSON.stringify({ lines, context }),
   });
-  if (res.status === 401 && !retried && (await askForCode())) return translate(lines, context, true);
+  if (res.status === 401 && !retried && (await askForCode())) return translateWithClaude(lines, context, true);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data.translations;
@@ -108,6 +188,7 @@ for (const tab of document.querySelectorAll(".tab")) {
   }
 
   function start() {
+    prepareEngine();
     recognition = new Recognition();
     recognition.lang = "en-US";
     recognition.continuous = true;
@@ -304,6 +385,7 @@ for (const tab of document.querySelectorAll(".tab")) {
   $("subFile").addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    prepareEngine();
     const parsed = parseSubtitles(await file.text());
     generation++;
     inFlight = 0;

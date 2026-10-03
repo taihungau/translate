@@ -8,7 +8,16 @@
 </head>
 <body>
   <header>
-    <h1>Subtitle Translator <span class="langs">EN → RU</span></h1>
+    <div class="title-row">
+      <h1>Subtitle Translator <span class="langs">EN → RU</span></h1>
+      <label class="engine">Translate with
+        <select id="engine">
+          <option value="chrome">Chrome built-in (free, no key)</option>
+          <option value="claude">Claude (needs API key on server)</option>
+        </select>
+      </label>
+      <span id="engineStatus" class="status"></span>
+    </div>
     <nav role="tablist">
       <button role="tab" class="tab active" data-panel="live" aria-selected="true">Live (microphone)</button>
       <button role="tab" class="tab" data-panel="video" aria-selected="false">Video + subtitle file</button>
