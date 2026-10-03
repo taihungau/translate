@@ -156,9 +156,22 @@ async function translateWithClaude(lines, context = [], retried = false) {
   return data.translations;
 }
 
+// iPhone Safari has no fullscreen for page elements, so fall back to stretching the element
+// over the whole screen with CSS. Tapping the subtitle panel (or the player's button) exits.
+function pseudoFullscreen(el, on) {
+  el.classList.toggle("pseudo-fs", on);
+  document.documentElement.classList.toggle("pseudo-fs-open", on);
+}
+
 function toggleFullscreen(el) {
-  if (document.fullscreenElement) document.exitFullscreen();
-  else el.requestFullscreen?.().catch(() => {});
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    return;
+  }
+  if (el.classList.contains("pseudo-fs")) return pseudoFullscreen(el, false);
+  const request = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!request || document.fullscreenEnabled === false) return pseudoFullscreen(el, true);
+  Promise.resolve(request.call(el)).catch(() => pseudoFullscreen(el, true));
 }
 
 // ---------------------------------------------------------------- tabs
@@ -418,6 +431,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     toggleBtn.textContent = "Stop";
     toggleBtn.classList.add("listening");
     document.body.classList.add("listening");
+    keepAwake();
     setStatus("Starting microphone…");
     try {
       await openMic();
@@ -493,6 +507,8 @@ for (const tab of document.querySelectorAll(".tab")) {
     toggleBtn.textContent = "Start";
     toggleBtn.classList.remove("listening");
     document.body.classList.remove("listening");
+    wakeLock?.release().catch(() => {});
+    wakeLock = null;
     if (!statusEl.classList.contains("error")) setStatus("Stopped");
   }
 
@@ -519,6 +535,18 @@ for (const tab of document.querySelectorAll(".tab")) {
   });
 
   toggleBtn.addEventListener("click", () => (listening ? stop() : start()));
+  // Stop phones and laptops dimming or locking the screen mid-film.
+  let wakeLock = null;
+  async function keepAwake() {
+    try {
+      wakeLock = (await navigator.wakeLock?.request("screen")) ?? null;
+    } catch { /* not supported or refused (e.g. low battery) */ }
+  }
+  // The lock is released whenever the page is hidden; take it again when it comes back.
+  document.addEventListener("visibilitychange", () => {
+    if (listening && document.visibilityState === "visible") keepAwake();
+  });
+
   const sizeSel = $("liveSize");
   const applySize = () => stage.style.setProperty("--ru-scale", sizeSel.value);
   try { sizeSel.value = localStorage.getItem("liveSize") || "1"; } catch { /* storage blocked */ }
@@ -530,6 +558,9 @@ for (const tab of document.querySelectorAll(".tab")) {
   });
   $("liveShowEn").addEventListener("change", (e) => stage.classList.toggle("hide-en", !e.target.checked));
   $("liveFullscreen").addEventListener("click", () => toggleFullscreen(stage));
+  stage.addEventListener("click", () => {
+    if (stage.classList.contains("pseudo-fs")) pseudoFullscreen(stage, false);
+  });
 })();
 
 // ---------------------------------------------------------------- video + subtitle file mode
