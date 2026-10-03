@@ -137,10 +137,18 @@ for (const tab of document.querySelectorAll(".tab")) {
 
   let recognition = null;
   let listening = false;
-  let seq = 0;
-  let shownSeq = -1;
   let fadeTimer = null;
   const recentEnglish = [];
+
+  // Each spoken phrase gets a number. While it is still being spoken we translate the
+  // partial text (rank 0, 1, 2...) so Russian appears immediately; the final text gets
+  // rank Infinity. Translations finish out of order, so only show something newer.
+  let phrase = 0;
+  let interimRank = 0;
+  let shown = { phrase: -1, rank: -1 };
+
+  const MIN_INTERIM_WORDS = 3;
+  const MAX_SUBTITLE_CHARS = 110;
 
   function setStatus(text, isError = false) {
     statusEl.textContent = text;
@@ -162,25 +170,53 @@ for (const tab of document.querySelectorAll(".tab")) {
     }
   }
 
+  // Long run-on speech would fill the screen; keep the end, which is what is being said now.
+  function tail(text) {
+    if (text.length <= MAX_SUBTITLE_CHARS) return text;
+    const cut = text.slice(-MAX_SUBTITLE_CHARS);
+    return "…" + cut.slice(cut.indexOf(" ") + 1);
+  }
+
+  function show(p, rank, ru, en) {
+    if (!ru || p < shown.phrase || (p === shown.phrase && rank <= shown.rank)) return;
+    shown = { phrase: p, rank };
+    ruEl.textContent = tail(ru);
+    ruEl.classList.remove("faded");
+    if (rank === Infinity) showEnglish(en);
+    // Clear the line once it has been on screen long enough, like a real subtitle.
+    clearTimeout(fadeTimer);
+    const hold = Math.min(8000, Math.max(3000, ru.length * 80));
+    fadeTimer = setTimeout(() => ruEl.classList.add("faded"), hold);
+  }
+
+  // Partial text: translate the latest version, never queue up stale ones.
+  let interimBusy = false;
+  let interimNext = null;
+  async function translateInterim(text) {
+    interimNext = { p: phrase, rank: interimRank++, text };
+    if (interimBusy) return;
+    interimBusy = true;
+    while (interimNext) {
+      const job = interimNext;
+      interimNext = null;
+      try {
+        const [result] = await translate([{ id: "interim", text: job.text }], recentEnglish.slice(-6));
+        if (job.p === phrase) show(job.p, job.rank, result?.text, job.text);
+      } catch { /* the final translation will report errors */ }
+    }
+    interimBusy = false;
+  }
+
   async function addPhrase(text) {
-    const id = seq++;
+    const p = phrase++;
+    interimNext = null;
     const context = recentEnglish.slice(-6);
     recentEnglish.push(text);
     if (recentEnglish.length > 20) recentEnglish.shift();
 
     try {
-      const [result] = await translate([{ id: String(id), text }], context);
-      // Requests run in parallel; never let an older phrase replace a newer one.
-      if (id > shownSeq && result?.text) {
-        shownSeq = id;
-        ruEl.textContent = result.text;
-        ruEl.classList.remove("faded");
-        showEnglish(text);
-        // Clear the line once it has been on screen long enough, like a real subtitle.
-        clearTimeout(fadeTimer);
-        const hold = Math.min(8000, Math.max(3000, result.text.length * 80));
-        fadeTimer = setTimeout(() => ruEl.classList.add("faded"), hold);
-      }
+      const [result] = await translate([{ id: String(p), text }], context);
+      show(p, Infinity, result?.text, text);
       if (listening) setStatus("Listening…");
     } catch (err) {
       setStatus(err.message, true);
@@ -204,7 +240,14 @@ for (const tab of document.querySelectorAll(".tab")) {
         if (result.isFinal) addPhrase(transcript);
         else interim += transcript + " ";
       }
-      if (interim) showEnglish("", interim.trim());
+      interim = interim.trim();
+      if (!interim) return;
+      showEnglish("", interim);
+      // Partial translations are near-instant with Chrome's on-device translator. With Claude
+      // each one would be a paid request, so Claude only translates finished phrases.
+      if (engineSel.value === "chrome" && interim.split(/\s+/).length >= MIN_INTERIM_WORDS) {
+        translateInterim(interim);
+      }
     };
     recognition.onerror = (event) => {
       if (event.error === "no-speech" || event.error === "aborted") return;
@@ -224,6 +267,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     recognition.start();
     toggleBtn.textContent = "Stop";
     toggleBtn.classList.add("listening");
+    document.body.classList.add("listening");
     setStatus("Listening…");
   }
 
@@ -232,6 +276,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     recognition?.stop();
     toggleBtn.textContent = "Start";
     toggleBtn.classList.remove("listening");
+    document.body.classList.remove("listening");
     if (!statusEl.classList.contains("error")) setStatus("Stopped");
   }
 

@@ -6,7 +6,9 @@ It has two modes:
 
 - **Live (microphone).** Press Start, allow the microphone and play the movie out loud. The
   browser transcribes the English it hears, and each phrase is shown in large Russian text a
-  moment after it is spoken, then fades like a real subtitle. Fullscreen fills the screen with
+  moment after it is spoken, then fades like a real subtitle. With Chrome's built-in translator,
+  Russian appears while the sentence is still being spoken and is corrected when it ends. The
+  app is always dark for use in a cinema, and the controls fade out while it is listening. Fullscreen fills the screen with
   the subtitle panel; English can be shown underneath if you want it. Each phrase is sent with
   the previous few lines so the translation keeps context (who is "you", ты vs вы, running jokes).
 - **Video + subtitle file.** Load a local video and its English `.srt` or `.vtt` file. Translation

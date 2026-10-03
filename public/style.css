@@ -1,21 +1,13 @@
+/* Always dark: made for a dark cinema, so nothing on screen should glow except the subtitles. */
 :root {
-  --bg: #f6f6f4;
-  --fg: #1b1b1b;
-  --muted: #666;
-  --panel: #fff;
-  --border: #ddd;
-  --accent: #c0392b;
-  --stage: #0d0d0d;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141414;
-    --fg: #ececec;
-    --muted: #9a9a9a;
-    --panel: #1e1e1e;
-    --border: #333;
-    --accent: #e0584a;
-  }
+  --bg: #000;
+  --fg: #c9c9c9;
+  --muted: #6f6f6f;
+  --panel: #111;
+  --border: #262626;
+  --accent: #8a2c22;
+  --stage: #000;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -52,15 +44,23 @@ button, select {
   border: 1px solid var(--border); background: var(--panel); color: var(--fg); cursor: pointer;
 }
 button:disabled { opacity: .5; cursor: default; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; min-width: 90px; }
-button.primary.listening { background: #555; border-color: #555; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #e6e6e6; min-width: 90px; }
+button.primary.listening { background: #222; border-color: #333; color: var(--fg); }
 .file input { max-width: 220px; }
 .status { color: var(--muted); font-size: .9rem; }
-.status.error { color: var(--accent); }
+.status.error { color: #c0675d; }
+h1 .langs { color: #b0463a; }
+.tab.active { color: var(--fg); }
+
+/* While listening, fade everything except the subtitles; hover or focus brings controls back. */
+header, .hint, .controls { transition: opacity .4s; }
+body.listening header, body.listening .hint, body.listening .controls { opacity: .15; }
+body.listening header:hover, body.listening .controls:hover,
+body.listening header:has(:focus-visible), body.listening .controls:has(:focus-visible) { opacity: 1; }
 
 /* Live subtitle stage */
 .stage {
-  background: var(--stage); color: #fff; border-radius: 10px;
+  background: var(--stage); color: #fff; border-radius: 10px; border: 1px solid #111;
   min-height: 62vh; padding: 24px 5% 7vh; display: flex; flex-direction: column;
   justify-content: flex-end; align-items: center; text-align: center; gap: 8px;
 }
@@ -71,7 +71,7 @@ button.primary.listening { background: #555; border-color: #555; }
 .sub-ru.faded { opacity: 0; }
 .stage:fullscreen .sub-ru { font-size: 6vw; }
 .stage:fullscreen .sub-en { font-size: 2vw; }
-.placeholder { color: #666; font-weight: 400; font-size: 1.1rem; }
+.placeholder { color: #3a3a3a; font-weight: 400; font-size: 1.1rem; }
 .hide-en .sub-en { display: none; }
 
 
