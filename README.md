@@ -46,8 +46,11 @@ Also chosen on the page, and free either way:
   or at the quietest moment during continuous music, and partial results are requested again as
   soon as the model is free (about every 0.25 s). For real time use **Moonshine**: it processes
   only the audio it is given, while Whisper always processes a padded 30-second window, so each
-  Whisper update costs the same however short the line. Whisper models are more accurate but
-  slower; the status line shows the time per update on your computer.
+  Whisper update costs the same however short the line. So when a Whisper model is chosen, the
+  app also runs Moonshine Tiny: Moonshine shows the words live as they are spoken, and Whisper's
+  more accurate text replaces each line when it finishes. The caption rolls: the previous line
+  (corrected) followed by the live words of the current one. The status line shows how long
+  live updates and finished lines take on your computer.
 
 The microphone is opened without call-style echo cancellation and noise suppression (which
 remove film dialogue), with a selectable boost (default 3×) followed by a compressor so quiet

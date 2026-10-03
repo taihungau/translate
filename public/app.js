@@ -279,7 +279,13 @@ for (const tab of document.querySelectorAll(".tab")) {
     }
   }
 
-  async function addPhrase(text) {
+  async function addPhrase(text, { show = true } = {}) {
+    if (!show) {
+      // Already superseded on screen; keep it only as context for later translations.
+      recentEnglish.push(text);
+      if (recentEnglish.length > 20) recentEnglish.shift();
+      return;
+    }
     const p = phrase++;
     interimNext = null;
     const context = recentEnglish.slice(-6);
@@ -299,20 +305,23 @@ for (const tab of document.querySelectorAll(".tab")) {
   const langSel = $("liveLang");
   const local = new LocalRecognizer({
     onInterim: (text) => handleInterim(text),
-    onFinal: (text) => addPhrase(text),
+    onFinal: (text, opts) => addPhrase(text, opts),
     onStatus: (text) => setStatus(text),
     onError: (message) => setStatus(message, true),
-    // Show how long each update takes, so models can be compared on this computer.
-    onTiming: (ms) => {
-      timings.push(ms);
-      if (timings.length > 8) timings.shift();
-      const avg = Math.round(timings.reduce((x, y) => x + y, 0) / timings.length);
-      if (listening && !statusEl.classList.contains("error")) {
-        setStatus(`Listening on ${localDevice === "webgpu" ? "GPU" : "CPU"} · ~${avg} ms per update${avg > 900 ? " (slow: try Moonshine)" : ""}`);
-      }
+    // Show how long updates take, so models can be compared on this computer.
+    onTiming: (ms, final) => {
+      const list = final ? timings.final : timings.partial;
+      list.push(ms);
+      if (list.length > 8) list.shift();
+      const avg = (l) => Math.round(l.reduce((x, y) => x + y, 0) / l.length);
+      if (!listening || statusEl.classList.contains("error") || !timings.partial.length) return;
+      const where = localDevice === "webgpu" ? "GPU" : "CPU";
+      const lines = timings.final.length ? ` · lines ~${avg(timings.final)} ms` : "";
+      const slow = avg(timings.partial) > 900 ? " (slow: try Moonshine)" : "";
+      setStatus(`Listening on ${where} · live text ~${avg(timings.partial)} ms${lines}${slow}`);
     },
   });
-  const timings = [];
+  const timings = { partial: [], final: [] };
   let localDevice = "";
   const micSel = $("liveMic");
   const levelEl = $("liveLevel");
@@ -466,7 +475,7 @@ for (const tab of document.querySelectorAll(".tab")) {
       try {
         const device = await local.load(asrSel.value);
         localDevice = device;
-        timings.length = 0;
+        timings.partial.length = timings.final.length = 0;
         if (!listening) return;
         await local.start(micStream);
         setStatus(device === "webgpu" ? "Listening (on device, GPU)…" : "Listening (on device, CPU: may lag)…");

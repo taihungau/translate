@@ -84,10 +84,10 @@ function optionsFor(kind, seconds) {
   return { max_new_tokens };
 }
 
-async function transcribe({ id, audio, final }) {
+async function transcribe({ id, audio, final, chunk }) {
   if (!asr) throw new Error("Speech model is not loaded");
   const started = performance.now();
   const out = await asr(audio, optionsFor(loaded.kind, audio.length / 16000));
   const ms = Math.round(performance.now() - started);
-  self.postMessage({ type: "result", id, final, ms, seconds: audio.length / 16000, text: (out?.text || "").trim() });
+  self.postMessage({ type: "result", id, final, chunk, ms, seconds: audio.length / 16000, text: (out?.text || "").trim() });
 }

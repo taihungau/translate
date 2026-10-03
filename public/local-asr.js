@@ -54,59 +54,134 @@ class Capture extends AudioWorkletProcessor {
 registerProcessor("capture", Capture);
 `;
 
-export class LocalRecognizer {
-  /**
-   * @param {{onInterim(text: string): void, onFinal(text: string): void,
-   *          onStatus(text: string): void, onError(message: string): void}} handlers
-   */
-  constructor(handlers) {
-    this.h = handlers;
-    this.worker = null;
-    this.modelKey = null;
-    this.ready = null;
-    this.busy = 0;
-    this.nextId = 0;
-    this.ctx = null;
-  }
-
-  ensureWorker() {
-    if (this.worker) return;
+// One speech model running in its own worker (asr-worker.js).
+class ModelWorker {
+  constructor(onMessage) {
     this.worker = new Worker(new URL("./asr-worker.js", import.meta.url), { type: "module" });
+    this.busy = 0;
+    this.key = null;
+    this.ready = null;
     this.worker.onmessage = ({ data }) => {
-      if (data.type === "progress") {
-        const pct = data.total ? Math.round((data.loaded / data.total) * 100) : 0;
-        const mb = Math.round(data.total / 1e6);
-        this.h.onStatus(`Downloading speech model… ${pct}% of ${mb} MB (only the first time)`);
-      } else if (data.type === "ready") {
-        this.readyResolve?.(data.device);
-      } else if (data.type === "result") {
-        this.busy--;
-        this.h.onTiming?.(data.ms, data.seconds);
-        const text = cleanTranscript(data.text);
-        if (text) (data.final ? this.h.onFinal : this.h.onInterim)(text);
-      } else if (data.type === "error") {
-        if (data.id !== undefined) this.busy--;
-        if (this.readyReject && data.id === undefined) this.readyReject(new Error(data.message));
-        else this.h.onError(data.message);
-      }
+      if (data.type === "ready") return this.settle?.resolve(data.device);
+      if (data.type === "error" && data.id === undefined && this.settle) return this.settle.reject(new Error(data.message));
+      if (data.type === "result" || (data.type === "error" && data.id !== undefined)) this.busy--;
+      onMessage(data);
     };
   }
 
   /** Download (first time only) and load a model. Resolves with "webgpu" or "wasm". */
-  load(modelKey) {
-    if (this.modelKey === modelKey && this.ready) return this.ready;
-    this.ensureWorker();
-    this.modelKey = modelKey;
-    this.h.onStatus("Loading speech model…");
-    this.ready = new Promise((resolve, reject) => {
-      this.readyResolve = resolve;
-      this.readyReject = reject;
-    }).finally(() => {
-      this.readyResolve = this.readyReject = null;
-    });
-    this.ready.catch(() => { this.ready = null; this.modelKey = null; });
-    this.worker.postMessage({ type: "load", key: modelKey, ...LOCAL_MODELS[modelKey] });
+  load(key) {
+    if (this.key === key && this.ready) return this.ready;
+    this.key = key;
+    this.ready = new Promise((resolve, reject) => (this.settle = { resolve, reject }))
+      .finally(() => (this.settle = null));
+    this.ready.catch(() => { this.ready = null; this.key = null; });
+    this.worker.postMessage({ type: "load", key, ...LOCAL_MODELS[key] });
     return this.ready;
+  }
+
+  transcribe(msg) {
+    this.busy++;
+    this.worker.postMessage({ type: "transcribe", ...msg }, [msg.audio.buffer]);
+  }
+}
+
+// Whisper always processes a padded 30-second window, so it can't update many times a second.
+// With a Whisper model, this fast model produces the live partial text and Whisper the final
+// (more accurate) text of each line.
+const FAST_PARTIALS_MODEL = "moonshine-tiny";
+
+export class LocalRecognizer {
+  /**
+   * @param {{onInterim(text: string): void, onFinal(text: string): void,
+   *          onStatus(text: string): void, onError(message: string): void,
+   *          onTiming?(ms: number, final: boolean): void}} handlers
+   */
+  constructor(handlers) {
+    this.h = handlers;
+    this.main = null; // model for final lines (and partials when it is fast enough)
+    this.fast = null; // Moonshine for partials when the main model is Whisper
+    this.nextId = 0;
+    this.chunkSeq = 0; // number of the chunk currently being recorded
+    this.liveChunk = -1; // newest chunk whose text is on screen
+    this.partials = new Map(); // chunk -> latest partial text
+    this.finals = new Map(); // chunk -> final text
+    this.cutTimes = new Map(); // chunk -> when it ended
+    this.ctx = null;
+  }
+
+  get partialsWorker() {
+    return this.fast?.ready && this.fast.key === FAST_PARTIALS_MODEL ? this.fast : this.main;
+  }
+
+  // The caption on screen is the previous line (Whisper's corrected text once it arrives)
+  // followed by the live words of the current line, like rolling TV captions. Partials and
+  // finals come from different models and finish out of order; this keeps them in place.
+  onMessage = (data) => {
+    if (data.type === "progress") {
+      const pct = data.total ? Math.round((data.loaded / data.total) * 100) : 0;
+      const mb = Math.round(data.total / 1e6);
+      this.h.onStatus(`Downloading speech model… ${pct}% of ${mb} MB (only the first time)`);
+      return;
+    }
+    if (data.type === "error") {
+      this.h.onError(data.message);
+      return;
+    }
+    if (data.type !== "result") return;
+
+    this.h.onTiming?.(data.ms, data.final);
+    const text = cleanTranscript(data.text);
+    const c = data.chunk;
+    if (data.final) {
+      this.finals.set(c, text);
+      if (!text) return;
+      if (c >= this.liveChunk) {
+        // Nothing newer is on screen yet: show this line as finished.
+        this.liveChunk = c;
+        this.h.onFinal(text, { show: true });
+      } else {
+        // A newer line is already being shown live: remember this one for context and
+        // put its corrected text into the rolling caption.
+        this.h.onFinal(text, { show: false });
+        if (c === this.liveChunk - 1) this.emitCaption();
+      }
+    } else {
+      if (c < this.liveChunk || this.finals.has(c) || !text) return;
+      this.liveChunk = c;
+      this.partials.set(c, text);
+      this.emitCaption();
+    }
+    for (const k of this.partials.keys()) if (k < this.liveChunk - 2) this.partials.delete(k);
+    for (const k of this.finals.keys()) if (k < this.liveChunk - 2) this.finals.delete(k);
+  };
+
+  emitCaption() {
+    const c = this.liveChunk;
+    const live = this.finals.get(c) || this.partials.get(c) || "";
+    // Keep the previous line only if it ended a moment ago, not after a long silence.
+    const prevEnded = this.cutTimes.get(c - 1) ?? 0;
+    const prev = performance.now() - prevEnded < 3500 ? this.finals.get(c - 1) || this.partials.get(c - 1) || "" : "";
+    const caption = [prev, live].filter(Boolean).join(" ");
+    if (caption) this.h.onInterim(caption);
+  }
+
+  /** Download (first time only) and load the chosen model. Resolves with "webgpu" or "wasm". */
+  async load(modelKey) {
+    this.main ??= new ModelWorker(this.onMessage);
+    this.h.onStatus("Loading speech model…");
+    const device = await this.main.load(modelKey);
+    if (LOCAL_MODELS[modelKey].kind.startsWith("whisper")) {
+      this.fast ??= new ModelWorker(this.onMessage);
+      this.h.onStatus("Loading the fast model for live partial text…");
+      try {
+        await this.fast.load(FAST_PARTIALS_MODEL);
+      } catch (err) {
+        // Still works without it, just with slower partials.
+        console.warn("Fast partials model unavailable:", err);
+      }
+    }
+    return device;
   }
 
   async start(stream) {
@@ -171,7 +246,7 @@ export class LocalRecognizer {
       this.cut(this.chunk.length - Math.floor(this.quietRun / 2));
     } else if (ms >= MAX_CHUNK_MS) {
       this.cut(this.quietestPoint());
-    } else if (ms >= 450 && this.busy === 0 && performance.now() - this.lastInterim >= INTERIM_EVERY_MS) {
+    } else if (ms >= 450 && this.partialsWorker.busy === 0 && performance.now() - this.lastInterim >= INTERIM_EVERY_MS) {
       // Partial result so subtitles start while the sentence is still going.
       this.lastInterim = performance.now();
       this.send(this.chunk, false);
@@ -209,7 +284,13 @@ export class LocalRecognizer {
   send(frames, final) {
     const audio = new Float32Array(frames.length * FRAME);
     frames.forEach((f, k) => audio.set(f, k * FRAME));
-    this.busy++;
-    this.worker.postMessage({ type: "transcribe", id: this.nextId++, audio, final }, [audio.buffer]);
+    const worker = final ? this.main : this.partialsWorker;
+    worker.transcribe({ id: this.nextId++, audio, final, chunk: this.chunkSeq });
+    if (final) {
+      this.cutTimes.set(this.chunkSeq, performance.now());
+      for (const k of this.cutTimes.keys()) if (k < this.chunkSeq - 3) this.cutTimes.delete(k);
+      this.chunkSeq++;
+    }
   }
+
 }
