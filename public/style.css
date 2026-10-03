@@ -65,12 +65,13 @@ body.listening header:has(:focus-visible), body.listening .controls:has(:focus-v
   justify-content: flex-end; align-items: center; text-align: center; gap: 8px;
 }
 .stage:fullscreen { border-radius: 0; padding: 0 5vw 8vh; }
-.sub-en { color: #bbb; font-size: 1.05rem; min-height: 1.5em; }
+.sub-en { color: #a8a8a8; font-size: clamp(20px, 2.8vw, 46px); font-weight: 500; line-height: 1.2; min-height: 1.2em; text-wrap: balance; transition: opacity .4s; }
+.sub-en.faded { opacity: 0; }
 .sub-en .interim { opacity: .6; font-style: italic; }
 .sub-ru { font-size: clamp(34px, 5.5vw, 96px); font-weight: 700; line-height: 1.15; text-shadow: 0 2px 4px #000; text-wrap: balance; transition: opacity .4s; }
 .sub-ru.faded { opacity: 0; }
 .stage:fullscreen .sub-ru { font-size: 6vw; }
-.stage:fullscreen .sub-en { font-size: 2vw; }
+.stage:fullscreen .sub-en { font-size: 3vw; }
 .placeholder { color: #3a3a3a; font-weight: 400; font-size: 1.1rem; }
 .hide-en .sub-en { display: none; }
 

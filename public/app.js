@@ -161,11 +161,12 @@ for (const tab of document.querySelectorAll(".tab")) {
   }
 
   function showEnglish(finalText, interimText = "") {
-    enEl.textContent = finalText;
+    enEl.classList.remove("faded");
+    enEl.textContent = tail(finalText);
     if (interimText) {
       const span = document.createElement("span");
       span.className = "interim";
-      span.textContent = (finalText ? " " : "") + interimText;
+      span.textContent = (finalText ? " " : "") + tail(interimText);
       enEl.append(span);
     }
   }
@@ -186,7 +187,10 @@ for (const tab of document.querySelectorAll(".tab")) {
     // Clear the line once it has been on screen long enough, like a real subtitle.
     clearTimeout(fadeTimer);
     const hold = Math.min(8000, Math.max(3000, ru.length * 80));
-    fadeTimer = setTimeout(() => ruEl.classList.add("faded"), hold);
+    fadeTimer = setTimeout(() => {
+      ruEl.classList.add("faded");
+      enEl.classList.add("faded");
+    }, hold);
   }
 
   // Partial text: translate the latest version, never queue up stale ones.
