@@ -205,7 +205,18 @@ function toggleFullscreen(el) {
 
 // Work offline once loaded (the cinema may have no signal).
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js").catch((err) => console.warn("Offline support unavailable:", err));
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" })
+    .then((reg) => reg.update())
+    .catch((err) => console.warn("Offline support unavailable:", err));
+  // A new version was installed while this page was open: reload once to run it.
+  let reloaded = false;
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController && !reloaded) {
+      reloaded = true;
+      location.reload();
+    }
+  });
 }
 
 // Ask the browser not to clear saved models when it tidies up storage.
@@ -408,7 +419,9 @@ for (const tab of document.querySelectorAll(".tab")) {
   }
 
   const boostSel = $("liveBoost");
-  try { boostSel.value = localStorage.getItem("liveBoost") || "3"; } catch { /* storage blocked */ }
+  // Too much boost distorts the sound, and Whisper invents words from distorted audio.
+  try { boostSel.value = localStorage.getItem("liveBoost") || "2"; } catch { /* storage blocked */ }
+  if (!boostSel.value) boostSel.value = "2"; // e.g. a saved 8× from an earlier version
   let rawStream = null;
   let boostGraph = null;
 

@@ -1,6 +1,6 @@
 // Keeps the app and its speech/translation library available offline (a cinema may have no
 // signal). The models themselves are stored by transformers.js in its own cache.
-const CACHE = "subtitle-app-v1";
+const CACHE = "subtitle-app-v2";
 const APP_FILES = ["./", "index.html", "style.css", "app.js", "subtitles.js", "local-asr.js", "asr-worker.js", "mt-worker.js"];
 
 self.addEventListener("install", (event) => {
@@ -37,7 +37,8 @@ self.addEventListener("fetch", (event) => {
   // The app itself: use the network when online (so updates arrive), the saved copy offline.
   if (url.origin === self.location.origin && !url.pathname.startsWith("/api/")) {
     event.respondWith(
-      fetch(request)
+      // Always ask the server for the latest version (bypassing the HTTP cache) when online.
+      fetch(request, { cache: "no-cache" })
         .then((response) => {
           if (response.ok) caches.open(CACHE).then((cache) => cache.put(request, response.clone()));
           return response;

@@ -66,6 +66,8 @@ async function transcribe({ id, audio, final, chunk }) {
     task: "transcribe",
     // Cap output at a fast speaking rate so the model can't loop on noise for long.
     max_new_tokens: Math.ceil(seconds * 7) + 8,
+    // Never repeat the same 4 words: stops the loops Whisper produces over music.
+    no_repeat_ngram_size: 4,
   });
   const ms = Math.round(performance.now() - started);
   self.postMessage({ type: "result", id, final, chunk, ms, text: (out?.text || "").trim() });
