@@ -2,12 +2,29 @@ import { parseSubtitles, toSrt, findCueAt } from "./subtitles.js";
 
 const $ = (id) => document.getElementById(id);
 
-async function translate(lines, context = []) {
+function storedCode() {
+  try { return localStorage.getItem("accessCode") || ""; } catch { return ""; }
+}
+
+let askingForCode = null;
+function askForCode() {
+  // One prompt even when several requests fail at once.
+  askingForCode ??= Promise.resolve().then(() => {
+    const code = window.prompt("This translator is protected. Enter the access code:") || "";
+    try { localStorage.setItem("accessCode", code); } catch { /* private mode */ }
+    askingForCode = null;
+    return code;
+  });
+  return askingForCode;
+}
+
+async function translate(lines, context = [], retried = false) {
   const res = await fetch("/api/translate", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Access-Code": storedCode() },
     body: JSON.stringify({ lines, context }),
   });
+  if (res.status === 401 && !retried && (await askForCode())) return translate(lines, context, true);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data.translations;

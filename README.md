@@ -33,6 +33,25 @@ npm start
 | `TRANSLATE_EFFORT`  | `low`             | `low` gives the lowest latency; raise it for higher quality |
 | `PORT`              | `3000`            | HTTP port                                                   |
 
+Set `ACCESS_CODE` to require a code before anyone can translate (recommended on a public URL).
+The page asks for it once and remembers it in that browser.
+
+## Deploy on Vercel
+
+The repo is ready for Vercel: `public/` is served as static files and `api/translate.js` runs
+as a serverless function (`server.js` is only for running locally).
+
+1. Push the repo to GitHub, then in Vercel choose **Add New… → Project** and import it.
+   Leave the framework preset as **Other**; `vercel.json` sets everything else.
+2. Under **Settings → Environment Variables**, add `ANTHROPIC_API_KEY`, and `ACCESS_CODE` so
+   strangers who find the URL can't spend your API credit. `TRANSLATE_MODEL` and
+   `TRANSLATE_EFFORT` work here too.
+3. Deploy, then open the `https://….vercel.app` URL. Vercel serves over HTTPS, which browsers
+   require before they allow the microphone.
+
+From the command line instead: `npm i -g vercel`, then `vercel` to preview and
+`vercel --prod` to publish. Add the environment variables with `vercel env add`.
+
 Requests use the server-side refusal fallback (`fallbacks: "default"`), so if the model declines
 a line, the API retries it on a fallback model inside the same call.
 
