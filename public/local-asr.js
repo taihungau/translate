@@ -10,22 +10,22 @@ export const LOCAL_MODELS = {
   "whisper-base": { kind: "whisper", repos: ["onnx-community/whisper-base.en", "Xenova/whisper-base.en"] },
   "whisper-small": { kind: "whisper", repos: ["onnx-community/whisper-small.en", "Xenova/whisper-small.en"] },
   "distil-small": { kind: "whisper", repos: ["onnx-community/distil-small.en", "Xenova/distil-small.en"] },
-  "whisper-turbo-q4": {
+  "whisper-turbo": {
     kind: "whisper-multi", // multilingual model: told to transcribe English
     repos: ["onnx-community/whisper-large-v3-turbo"],
-    // 4-bit weights: roughly a third of the half-precision download, loads much faster,
-    // small accuracy cost.
+    // 4-bit weights (~0.5 GB): far quicker to download and load onto the GPU than half
+    // precision, with a small accuracy cost.
     dtypes: {
       webgpu: [{ encoder_model: "q4", decoder_model_merged: "q4" }, { encoder_model: "q4f16", decoder_model_merged: "q4f16" }],
       wasm: ["q4", "q8"],
     },
   },
-  "whisper-turbo": {
+  "whisper-turbo-full": {
     kind: "whisper-multi",
     repos: ["onnx-community/whisper-large-v3-turbo"],
-    // The full-precision encoder is ~2.5 GB; half precision brings the model to ~1.3 GB.
+    // Half precision, ~1.3 GB (full precision would be ~2.5 GB).
     dtypes: {
-      webgpu: [{ encoder_model: "fp16", decoder_model_merged: "q4" }, { encoder_model: "q4", decoder_model_merged: "q4" }],
+      webgpu: [{ encoder_model: "fp16", decoder_model_merged: "q4" }],
       wasm: ["q8"],
     },
   },
@@ -37,6 +37,7 @@ const FRAME_MS = 30;
 const PAUSE_MS = 250; // a dip this long counts as a pause between phrases
 const MIN_CHUNK_MS = 1500; // enough context for accuracy, short enough to stay real-time
 const MAX_CHUNK_MS = 4500; // long run-on speech is cut at its quietest point before this
+const MAX_FINAL_MS = 25000; // Whisper's window is 30 s; one call can correct this much
 const INTERIM_EVERY_MS = 250; // in practice: as soon as the model is free again
 const SILENT_RMS = 0.002; // below this nothing is audible at all
 
@@ -119,6 +120,9 @@ export class LocalRecognizer {
     this.cutTimes = new Map(); // chunk -> when it ended
     this.ctx = null;
     this.loading = {}; // per worker: download/warm-up progress of the current load
+    this.batchFinals = false; // true for Whisper: see cut()
+    this.pendingFinal = []; // finished-line audio waiting for Whisper
+    this.pendingChunk = -1;
   }
 
   get partialsWorker() {
@@ -156,6 +160,7 @@ export class LocalRecognizer {
     if (data.type !== "result") return;
 
     this.h.onTiming?.(data.ms, data.final);
+    if (data.final) queueMicrotask(() => this.flushFinal()); // Whisper is free again
     const text = cleanTranscript(data.text);
     const c = data.chunk;
     if (data.final) {
@@ -194,6 +199,8 @@ export class LocalRecognizer {
   /** Download (first time only) and load the chosen model. Resolves with "webgpu" or "wasm". */
   async load(modelKey) {
     this.loading = {};
+    this.batchFinals = LOCAL_MODELS[modelKey].kind.startsWith("whisper");
+    this.pendingFinal = [];
     this.main ??= new ModelWorker((d) => this.onMessage(d, "main"));
     if (this.main.key !== modelKey || !this.main.ready) this.h.onStatus("Loading speech model…");
     const main = this.main.load(modelKey);
@@ -300,9 +307,32 @@ export class LocalRecognizer {
 
   cut(at) {
     const head = this.chunk.slice(0, at);
-    if (this.levels.slice(0, at).some((l) => l > SILENT_RMS)) this.send(head, true);
+    const audible = this.levels.slice(0, at).some((l) => l > SILENT_RMS);
+    const id = this.chunkSeq++;
+    this.cutTimes.set(id, performance.now());
+    for (const k of this.cutTimes.keys()) if (k < id - 3) this.cutTimes.delete(k);
+    if (audible) {
+      if (this.batchFinals) {
+        // Whisper is slow per call but costs the same for 2 s or 25 s of audio: collect
+        // finished lines while it is busy and correct them all in one go when it is free.
+        // That keeps it from falling behind the film; Moonshine shows the live words meanwhile.
+        this.pendingFinal.push(...head);
+        this.pendingChunk = id;
+        this.flushFinal();
+      } else {
+        this.send(head, true, id);
+      }
+    }
     this.keepFrom(at);
     this.lastInterim = performance.now();
+  }
+
+  flushFinal() {
+    if (!this.pendingFinal.length || !this.main || this.main.busy > 0) return;
+    const maxFrames = Math.floor(MAX_FINAL_MS / FRAME_MS);
+    const frames = this.pendingFinal.length > maxFrames ? this.pendingFinal.slice(-maxFrames) : this.pendingFinal;
+    this.pendingFinal = [];
+    this.send(frames, true, this.pendingChunk);
   }
 
   keepFrom(index) {
@@ -311,16 +341,11 @@ export class LocalRecognizer {
     this.quietRun = 0;
   }
 
-  send(frames, final) {
+  send(frames, final, chunk = this.chunkSeq) {
     const audio = new Float32Array(frames.length * FRAME);
     frames.forEach((f, k) => audio.set(f, k * FRAME));
     const worker = final ? this.main : this.partialsWorker;
-    worker.transcribe({ id: this.nextId++, audio, final, chunk: this.chunkSeq });
-    if (final) {
-      this.cutTimes.set(this.chunkSeq, performance.now());
-      for (const k of this.cutTimes.keys()) if (k < this.chunkSeq - 3) this.cutTimes.delete(k);
-      this.chunkSeq++;
-    }
+    worker.transcribe({ id: this.nextId++, audio, final, chunk });
   }
 
 }

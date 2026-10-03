@@ -41,14 +41,17 @@ Also chosen on the page, and free either way:
   Large v3 Turbo.** Open models that run in the
   browser with [transformers.js](https://github.com/huggingface/transformers.js), on the GPU
   (WebGPU) when available. They usually cope better with film sound. The first use downloads
-  the model (tens of MB for Tiny, about 1 GB for Large Turbo), then it is cached. All audio is
+  the model (tens of MB for Tiny, about 0.5 GB for Large Turbo in its default 4-bit form, or
+  1.3 GB for the full version), then it is cached. All audio is
   transcribed (nothing is dropped by a loudness gate); it is cut into 1.5–4.5 s chunks at pauses,
   or at the quietest moment during continuous music, and partial results are requested again as
   soon as the model is free (about every 0.25 s). For real time use **Moonshine**: it processes
   only the audio it is given, while Whisper always processes a padded 30-second window, so each
   Whisper update costs the same however short the line. So when a Whisper model is chosen, the
   app also runs Moonshine Tiny: Moonshine shows the words live as they are spoken, and Whisper's
-  more accurate text replaces each line when it finishes. The caption rolls: the previous line
+  more accurate text replaces each line when it finishes. While Whisper is busy, finished lines
+are collected and corrected together in its next call (one call costs the same for up to
+~25 s of audio), so slow models like Large Turbo never fall behind the film. The caption rolls: the previous line
   (corrected) followed by the live words of the current one. The status line shows how long
   live updates and finished lines take on your computer.
 
