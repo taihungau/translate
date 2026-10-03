@@ -121,7 +121,9 @@ export class LocalRecognizer {
     if (data.type === "progress") {
       const pct = data.total ? Math.round((data.loaded / data.total) * 100) : 0;
       const mb = Math.round(data.total / 1e6);
-      this.h.onStatus(`Downloading speech model… ${pct}% of ${mb} MB (only the first time)`);
+      this.h.onStatus(data.saved
+        ? `Loading saved speech model from this device… ${pct}%`
+        : `Downloading speech model… ${pct}% of ${mb} MB (only the first time)`);
       return;
     }
     if (data.type === "error") {

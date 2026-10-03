@@ -13,6 +13,16 @@ self.onmessage = ({ data }) => {
   });
 };
 
+// Models are saved by transformers.js in Cache Storage after the first download.
+async function isSaved(repo) {
+  try {
+    const keys = await (await caches.open("transformers-cache")).keys();
+    return keys.some((r) => r.url.includes(`/${repo}/`));
+  } catch {
+    return false;
+  }
+}
+
 async function hasWebGPU() {
   try {
     return Boolean(navigator.gpu && (await navigator.gpu.requestAdapter()));
@@ -45,6 +55,7 @@ async function load({ key, kind, repos, dtypes: dtypeOverrides }) {
     ? [{ encoder_model: "fp32", decoder_model_merged: "q4" }, { encoder_model: "fp32", decoder_model_merged: "fp32" }]
     : ["q8", "fp32"]);
 
+  let saved = false;
   const files = new Map();
   const progress_callback = (p) => {
     if (p.status !== "progress" || !p.total) return;
@@ -55,11 +66,12 @@ async function load({ key, kind, repos, dtypes: dtypeOverrides }) {
       loadedBytes += f.loaded;
       totalBytes += f.total;
     }
-    self.postMessage({ type: "progress", loaded: loadedBytes, total: totalBytes });
+    self.postMessage({ type: "progress", loaded: loadedBytes, total: totalBytes, saved });
   };
 
   let lastError;
   for (const repo of repos) {
+    saved = await isSaved(repo);
     for (const dtype of dtypes) {
       try {
         asr = await transformers.pipeline("automatic-speech-recognition", repo, { device, dtype, progress_callback });

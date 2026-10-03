@@ -57,6 +57,19 @@ remove film dialogue), with a selectable boost (default 3×) followed by a compr
 dialogue is lifted without loud effects clipping. The computer's own microphone (for example
 "MacBook Pro Microphone") is preferred over the system default, and the choice is remembered.
 
+## Saving models and working offline
+
+Downloaded models are kept in the browser (transformers.js stores them in Cache Storage), so
+each model downloads only once. The page asks the browser to make that storage persistent so
+it isn't cleared when space runs low, and a service worker keeps the app and its library
+available offline, which matters in a cinema without signal.
+
+Press **Save for offline** at home on Wi-Fi: it downloads the speech and translation models
+for the current settings without starting the microphone, and reports the space used. When a
+model is already saved, the status says "Loading saved speech model" rather than
+"Downloading". Chrome's online speech recognition still needs a connection; the on-device
+models and the built-in or on-device translators do not.
+
 ## Run it
 
 Requires Node.js 18 or later. An Anthropic API key is only needed for the Claude engine.

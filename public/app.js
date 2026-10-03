@@ -50,13 +50,15 @@ function setEngineStatus(text, isError = false) {
 let mtWorker = null;
 let mtNextId = 0;
 const mtPending = new Map();
-function opusTranslate(texts) {
+function opusTranslate(texts, type = "translate") {
   if (!mtWorker) {
     mtWorker = new Worker(new URL("./mt-worker.js", import.meta.url), { type: "module" });
     mtWorker.onmessage = ({ data }) => {
       if (data.type === "progress") {
         const pct = data.total ? Math.round((data.loaded / data.total) * 100) : 0;
-        setEngineStatus(`Downloading translation model… ${pct}% (only the first time)`);
+        setEngineStatus(data.saved
+          ? `Loading saved translation model… ${pct}%`
+          : `Downloading translation model… ${pct}% (only the first time)`);
         return;
       }
       const job = mtPending.get(data.id);
@@ -74,7 +76,7 @@ function opusTranslate(texts) {
   const id = mtNextId++;
   return new Promise((resolve, reject) => {
     mtPending.set(id, { resolve, reject });
-    mtWorker.postMessage({ type: "translate", id, texts });
+    mtWorker.postMessage({ type, id, texts });
   });
 }
 
@@ -172,6 +174,20 @@ function toggleFullscreen(el) {
   const request = el.requestFullscreen || el.webkitRequestFullscreen;
   if (!request || document.fullscreenEnabled === false) return pseudoFullscreen(el, true);
   Promise.resolve(request.call(el)).catch(() => pseudoFullscreen(el, true));
+}
+
+// Work offline once loaded (the cinema may have no signal).
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch((err) => console.warn("Offline support unavailable:", err));
+}
+
+// Ask the browser not to clear saved models when it tidies up storage.
+async function keepModelsSaved() {
+  try {
+    return (await navigator.storage?.persist?.()) ?? false;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------- tabs
@@ -279,8 +295,8 @@ for (const tab of document.querySelectorAll(".tab")) {
     }
   }
 
-  async function addPhrase(text, { show = true } = {}) {
-    if (!show) {
+  async function addPhrase(text, { show: display = true } = {}) {
+    if (!display) {
       // Already superseded on screen; keep it only as context for later translations.
       recentEnglish.push(text);
       if (recentEnglish.length > 20) recentEnglish.shift();
@@ -447,6 +463,7 @@ for (const tab of document.querySelectorAll(".tab")) {
 
   async function start() {
     prepareEngine();
+    keepModelsSaved();
     listening = true;
     toggleBtn.textContent = "Stop";
     toggleBtn.classList.add("listening");
@@ -567,6 +584,28 @@ for (const tab of document.querySelectorAll(".tab")) {
   // The lock is released whenever the page is hidden; take it again when it comes back.
   document.addEventListener("visibilitychange", () => {
     if (listening && document.visibilityState === "visible") keepAwake();
+  });
+
+  // Download everything the current settings need, without starting the microphone.
+  const saveBtn = $("liveSave");
+  saveBtn.addEventListener("click", async () => {
+    saveBtn.disabled = true;
+    try {
+      const persisted = await keepModelsSaved();
+      if (engineSel.value === "chrome") prepareEngine(); // Chrome's Russian language pack
+      if (engineSel.value === "opus") {
+        setStatus("Saving the translation model…");
+        await opusTranslate([], "load");
+      }
+      if (!usesChrome()) await local.load(asrSel.value);
+      const { usage = 0 } = (await navigator.storage?.estimate?.()) ?? {};
+      setStatus(`Saved on this device (${Math.round(usage / 1e6)} MB in total)` +
+        (persisted ? ". It stays until you clear site data." : ". The browser may clear it if storage runs low."));
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      saveBtn.disabled = false;
+    }
   });
 
   const sizeSel = $("liveSize");

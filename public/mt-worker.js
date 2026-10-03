@@ -12,9 +12,20 @@ self.onmessage = ({ data }) => {
   });
 };
 
+// Models are saved by transformers.js in Cache Storage after the first download.
+async function isSaved(repo) {
+  try {
+    const keys = await (await caches.open("transformers-cache")).keys();
+    return keys.some((r) => r.url.includes(`/${repo}/`));
+  } catch {
+    return false;
+  }
+}
+
 async function load() {
   if (translator) return;
   const { pipeline } = await import(TRANSFORMERS_URL);
+  let saved = false;
   const files = new Map();
   const progress_callback = (p) => {
     if (p.status !== "progress" || !p.total) return;
@@ -25,10 +36,11 @@ async function load() {
       loaded += f.loaded;
       total += f.total;
     }
-    self.postMessage({ type: "progress", loaded, total });
+    self.postMessage({ type: "progress", loaded, total, saved });
   };
   let lastError;
   for (const repo of REPOS) {
+    saved = await isSaved(repo);
     for (const dtype of ["q8", "fp32"]) {
       try {
         translator = await pipeline("translation", repo, { dtype, progress_callback });
@@ -43,6 +55,11 @@ async function load() {
 }
 
 async function handle({ type, id, texts }) {
+  if (type === "load") {
+    await load();
+    self.postMessage({ type: "result", id, texts: [] });
+    return;
+  }
   if (type !== "translate") return;
   await load();
   const out = await translator(texts, { max_new_tokens: 256 });
