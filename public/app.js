@@ -1,5 +1,5 @@
 import { parseSubtitles, toSrt, findCueAt } from "./subtitles.js";
-import { LocalRecognizer } from "./local-asr.js";
+import { LocalRecognizer, isSavedOnDevice } from "./local-asr.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -555,9 +555,28 @@ for (const tab of document.querySelectorAll(".tab")) {
     try { localStorage.setItem("liveLang", langSel.value); } catch { /* storage blocked */ }
     recognition?.stop(); // onend restarts it with the new accent
   });
+  // Get the chosen model ready in the background so Start is instant. Only models already
+  // saved on this device are loaded this way, so nothing big is downloaded unasked.
+  async function warmUp() {
+    if (listening || usesChrome() || !(await isSavedOnDevice(asrSel.value))) return;
+    try {
+      const key = asrSel.value;
+      await local.load(key);
+      if (!listening && asrSel.value === key) setStatus("Speech model ready. Press Start.");
+    } catch { /* reported again when Start is pressed */ }
+  }
+  warmUp();
+  if (engineSel.value === "opus") {
+    caches.open("transformers-cache")
+      .then((c) => c.keys())
+      .then((keys) => keys.some((r) => r.url.includes("/opus-mt-en-ru/")) && opusTranslate([], "load"))
+      .catch(() => {});
+  }
+
   asrSel.addEventListener("change", async () => {
     try { localStorage.setItem("liveAsr", asrSel.value); } catch { /* storage blocked */ }
     langSel.hidden = !usesChrome();
+    warmUp();
     if (!listening) return;
     stop();
     await start();

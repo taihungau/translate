@@ -171,18 +171,18 @@ export class LocalRecognizer {
   /** Download (first time only) and load the chosen model. Resolves with "webgpu" or "wasm". */
   async load(modelKey) {
     this.main ??= new ModelWorker(this.onMessage);
-    this.h.onStatus("Loading speech model…");
-    const device = await this.main.load(modelKey);
+    if (this.main.key !== modelKey || !this.main.ready) this.h.onStatus("Loading speech model…");
+    const main = this.main.load(modelKey);
+    let fast = Promise.resolve();
     if (LOCAL_MODELS[modelKey].kind.startsWith("whisper")) {
+      // Load the live-text model at the same time, not after Whisper.
       this.fast ??= new ModelWorker(this.onMessage);
-      this.h.onStatus("Loading the fast model for live partial text…");
-      try {
-        await this.fast.load(FAST_PARTIALS_MODEL);
-      } catch (err) {
+      fast = this.fast.load(FAST_PARTIALS_MODEL).catch((err) => {
         // Still works without it, just with slower partials.
         console.warn("Fast partials model unavailable:", err);
-      }
+      });
     }
+    const [device] = await Promise.all([main, fast]);
     return device;
   }
 
@@ -295,4 +295,16 @@ export class LocalRecognizer {
     }
   }
 
+}
+
+/** True when every model the given option needs is already saved in this browser. */
+export async function isSavedOnDevice(modelKey) {
+  const needs = [modelKey];
+  if (LOCAL_MODELS[modelKey]?.kind.startsWith("whisper")) needs.push(FAST_PARTIALS_MODEL);
+  try {
+    const urls = (await (await caches.open("transformers-cache")).keys()).map((r) => r.url);
+    return needs.every((key) => LOCAL_MODELS[key].repos.some((repo) => urls.some((u) => u.includes(`/${repo}/`))));
+  } catch {
+    return false;
+  }
 }

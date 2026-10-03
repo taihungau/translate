@@ -23,11 +23,14 @@ async function isSaved(repo) {
   }
 }
 
-async function hasWebGPU() {
+// Which GPU features this computer has: WebGPU at all, and 16-bit floats (most recent GPUs,
+// including Apple silicon), which halve the size of the biggest model files.
+async function gpuSupport() {
   try {
-    return Boolean(navigator.gpu && (await navigator.gpu.requestAdapter()));
+    const adapter = navigator.gpu && (await navigator.gpu.requestAdapter());
+    return { gpu: Boolean(adapter), f16: Boolean(adapter?.features?.has("shader-f16")) };
   } catch {
-    return false;
+    return { gpu: false, f16: false };
   }
 }
 
@@ -48,11 +51,16 @@ async function load({ key, kind, repos, dtypes: dtypeOverrides }) {
     loaded = null;
   }
 
-  const device = (await hasWebGPU()) ? "webgpu" : "wasm";
-  // Quantised decoders keep downloads small. Not every model repo ships every variant,
-  // so try a few formats before giving up.
+  const { gpu, f16 } = await gpuSupport();
+  const device = gpu ? "webgpu" : "wasm";
+  // Smallest formats first: a half-precision encoder (half the download, faster on the GPU)
+  // and a 4-bit decoder. Not every model repo ships every variant, so fall back as needed.
   const dtypes = dtypeOverrides?.[device] ?? (device === "webgpu"
-    ? [{ encoder_model: "fp32", decoder_model_merged: "q4" }, { encoder_model: "fp32", decoder_model_merged: "fp32" }]
+    ? [
+        ...(f16 ? [{ encoder_model: "fp16", decoder_model_merged: "q4" }] : []),
+        { encoder_model: "fp32", decoder_model_merged: "q4" },
+        { encoder_model: "fp32", decoder_model_merged: "fp32" },
+      ]
     : ["q8", "fp32"]);
 
   let saved = false;

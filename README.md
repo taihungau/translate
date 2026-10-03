@@ -67,7 +67,10 @@ available offline, which matters in a cinema without signal.
 Press **Save for offline** at home on Wi-Fi: it downloads the speech and translation models
 for the current settings without starting the microphone, and reports the space used. When a
 model is already saved, the status says "Loading saved speech model" rather than
-"Downloading". Chrome's online speech recognition still needs a connection; the on-device
+"Downloading". A saved model is loaded in the background as soon as the page opens (or when
+you pick it), so Start is instant; it then stays loaded across Stop and Start. Whisper and its
+live-text helper load in parallel, and on GPUs with 16-bit float support (most recent ones,
+including Apple silicon) the half-precision encoder is used, halving the download. Chrome's online speech recognition still needs a connection; the on-device
 models and the built-in or on-device translators do not.
 
 ## Run it
