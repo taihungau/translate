@@ -4,11 +4,11 @@ A small web app that translates English movie subtitles into Russian in real tim
 
 It has two modes:
 
-- **Live (microphone).** Play the movie out loud. The browser transcribes the English speech,
-  and each phrase is translated into Russian as soon as the speaker finishes it. The Russian
-  line is shown in a large subtitle panel that can go fullscreen, with a scrolling transcript
-  below it. Each phrase is sent with the previous few lines so the translation keeps context
-  (who is "you", ты vs вы, running jokes).
+- **Live (microphone).** Press Start, allow the microphone and play the movie out loud. The
+  browser transcribes the English it hears, and each phrase is shown in large Russian text a
+  moment after it is spoken, then fades like a real subtitle. Fullscreen fills the screen with
+  the subtitle panel; English can be shown underneath if you want it. Each phrase is sent with
+  the previous few lines so the translation keeps context (who is "you", ты vs вы, running jokes).
 - **Video + subtitle file.** Load a local video and its English `.srt` or `.vtt` file. Translation
   begins at the playhead and runs ahead of it in parallel batches, so you can press play almost
   right away. Seeking moves the translation to the new position. Russian subtitles (or Russian

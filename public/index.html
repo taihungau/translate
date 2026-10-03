@@ -19,25 +19,20 @@
     <!-- LIVE MODE -->
     <section id="live" class="panel active">
       <p class="hint">
-        Play the movie out loud and press <b>Start</b>. Your browser transcribes the English speech
-        and every phrase is translated into Russian as soon as it ends. Speech recognition needs
-        Chrome, Edge or Safari.
+        Press <b>Start</b>, allow the microphone, and play the movie out loud. Each English line the
+        microphone hears is shown in Russian a moment later. Needs Chrome, Edge or Safari.
       </p>
       <div class="controls">
         <button id="liveToggle" class="primary">Start</button>
-        <label><input type="checkbox" id="liveShowEn" checked> Show English</label>
-        <button id="liveFullscreen">Fullscreen subtitles</button>
-        <button id="liveClear">Clear history</button>
+        <label><input type="checkbox" id="liveShowEn"> Show English</label>
+        <button id="liveFullscreen">Fullscreen</button>
         <span id="liveStatus" class="status"></span>
       </div>
 
-      <div id="liveStage" class="stage">
+      <div id="liveStage" class="stage hide-en">
         <div class="sub-en" id="liveEn"></div>
         <div class="sub-ru" id="liveRu"><span class="placeholder">Russian subtitles appear here</span></div>
       </div>
-
-      <h2>Transcript</h2>
-      <ol id="liveHistory" class="history"></ol>
     </section>
 
     <!-- VIDEO MODE -->

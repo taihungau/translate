@@ -36,13 +36,13 @@ for (const tab of document.querySelectorAll(".tab")) {
   const statusEl = $("liveStatus");
   const enEl = $("liveEn");
   const ruEl = $("liveRu");
-  const historyEl = $("liveHistory");
   const stage = $("liveStage");
 
   let recognition = null;
   let listening = false;
   let seq = 0;
   let shownSeq = -1;
+  let fadeTimer = null;
   const recentEnglish = [];
 
   function setStatus(text, isError = false) {
@@ -71,25 +71,21 @@ for (const tab of document.querySelectorAll(".tab")) {
     recentEnglish.push(text);
     if (recentEnglish.length > 20) recentEnglish.shift();
 
-    const li = document.createElement("li");
-    li.innerHTML = '<div class="en"></div><div class="ru pending">translating…</div>';
-    li.querySelector(".en").textContent = text;
-    historyEl.append(li);
-    historyEl.scrollTop = historyEl.scrollHeight;
-    const ruLine = li.querySelector(".ru");
-
     try {
       const [result] = await translate([{ id: String(id), text }], context);
-      ruLine.textContent = result?.text ?? "";
-      ruLine.classList.remove("pending");
       // Requests run in parallel; never let an older phrase replace a newer one.
-      if (id > shownSeq) {
+      if (id > shownSeq && result?.text) {
         shownSeq = id;
-        ruEl.textContent = result?.text ?? "";
+        ruEl.textContent = result.text;
+        ruEl.classList.remove("faded");
         showEnglish(text);
+        // Clear the line once it has been on screen long enough, like a real subtitle.
+        clearTimeout(fadeTimer);
+        const hold = Math.min(8000, Math.max(3000, result.text.length * 80));
+        fadeTimer = setTimeout(() => ruEl.classList.add("faded"), hold);
       }
+      if (listening) setStatus("Listening…");
     } catch (err) {
-      ruLine.textContent = `⚠ ${err.message}`;
       setStatus(err.message, true);
     }
   }
@@ -144,11 +140,6 @@ for (const tab of document.querySelectorAll(".tab")) {
   toggleBtn.addEventListener("click", () => (listening ? stop() : start()));
   $("liveShowEn").addEventListener("change", (e) => stage.classList.toggle("hide-en", !e.target.checked));
   $("liveFullscreen").addEventListener("click", () => toggleFullscreen(stage));
-  $("liveClear").addEventListener("click", () => {
-    historyEl.replaceChildren();
-    enEl.textContent = "";
-    ruEl.innerHTML = '<span class="placeholder">Russian subtitles appear here</span>';
-  });
 })();
 
 // ---------------------------------------------------------------- video + subtitle file mode
