@@ -34,3 +34,15 @@ test("enforces ACCESS_CODE when set", async () => {
     delete process.env.ACCESS_CODE;
   }
 });
+
+test("explains a missing API key instead of failing generically", async () => {
+  const saved = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+  try {
+    const res = await call("POST", { lines: [{ id: "1", text: "Hi" }] });
+    assert.equal(res.status, 500);
+    assert.match(res.body.error, /ANTHROPIC_API_KEY is not set/);
+  } finally {
+    if (saved !== undefined) process.env.ANTHROPIC_API_KEY = saved;
+  }
+});
