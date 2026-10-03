@@ -519,6 +519,15 @@ for (const tab of document.querySelectorAll(".tab")) {
   });
 
   toggleBtn.addEventListener("click", () => (listening ? stop() : start()));
+  const sizeSel = $("liveSize");
+  const applySize = () => stage.style.setProperty("--ru-scale", sizeSel.value);
+  try { sizeSel.value = localStorage.getItem("liveSize") || "1"; } catch { /* storage blocked */ }
+  if (!sizeSel.value) sizeSel.value = "1";
+  applySize();
+  sizeSel.addEventListener("change", () => {
+    try { localStorage.setItem("liveSize", sizeSel.value); } catch { /* storage blocked */ }
+    applySize();
+  });
   $("liveShowEn").addEventListener("change", (e) => stage.classList.toggle("hide-en", !e.target.checked));
   $("liveFullscreen").addEventListener("click", () => toggleFullscreen(stage));
 })();
