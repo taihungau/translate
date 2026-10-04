@@ -11,7 +11,7 @@
 <body>
   <header>
     <div class="title-row">
-      <h1>Subtitle Translator <span class="langs">EN → RU</span> <span class="version" title="App version">v3 · Whisper Large v3 Turbo</span></h1>
+      <h1>Subtitle Translator <span class="langs">EN → RU</span> <span class="version" id="appVersion" title="App version">v4</span></h1>
       <label class="engine">Translate with
         <select id="engine">
           <option value="chrome">Chrome built-in (free)</option>
@@ -32,10 +32,8 @@
     <!-- LIVE MODE -->
     <section id="live" class="panel active">
       <p class="hint">
-        Press <b>Start</b>, allow the microphone, and play the movie out loud. Speech is recognised
-        on this computer by Whisper Large v3 Turbo (Chrome or Edge on a recent Mac or PC; a one-time
-        download of about 1.3 GB) and shown in Russian as it is spoken. Watch the level bar: it
-        should jump whenever someone speaks.
+        Press <b>Start</b>, allow the microphone, and play the movie out loud. Every English line is
+        shown in Russian as it is spoken. Watch the level bar: it should jump whenever someone speaks.
       </p>
       <div class="controls">
         <button id="liveToggle" class="primary">Start</button>

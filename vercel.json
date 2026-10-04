@@ -7,6 +7,12 @@
   "functions": {
     "api/translate.js": {
       "maxDuration": 60
+    },
+    "api/speech-token.js": {
+      "maxDuration": 10
+    },
+    "api/config.js": {
+      "maxDuration": 5
     }
   }
 }

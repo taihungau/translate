@@ -33,12 +33,20 @@ Pick the engine at the top of the page:
 
 ## Speech recognition (live mode)
 
-Speech is recognised on the device by **Whisper Large v3 Turbo**, running in the browser with
-[transformers.js](https://github.com/huggingface/transformers.js) on the GPU (WebGPU), using
-the settings of the library's official demo for this model: half-precision encoder, 4-bit
-decoder. It needs Chrome or Edge on a computer with WebGPU (any recent Mac or PC). The model is
-downloaded once (about 1.3 GB) when the page first opens, then kept in the browser; a progress
-bar shows the download and the GPU preparation.
+**Deepgram Nova-3 (used when `DEEPGRAM_API_KEY` is set on the server).** One of the most
+accurate live speech recognisers, with words arriving a few hundred milliseconds after they are
+spoken, and it works in any browser, including phones. The microphone is streamed straight to
+Deepgram over a WebSocket; the server only hands the browser a short-lived token
+(`/api/speech-token`), so the API key never leaves the server. Words are shown while they are
+spoken and each sentence is finished at a 300 ms pause (or after 1 s without words, even over
+music). Get a key at [console.deepgram.com](https://console.deepgram.com); new accounts come
+with free credit.
+
+**Whisper Large v3 Turbo on the device (fallback when no Deepgram key is set).** Runs in the
+browser with [transformers.js](https://github.com/huggingface/transformers.js) on the GPU
+(WebGPU), using the settings of the library's official demo for this model: half-precision
+encoder, 4-bit decoder. It needs Chrome or Edge on a computer with WebGPU (not phones), and a
+one-time download of about 1.3 GB.
 
 Audio is cut into 2–12 s stretches at natural pauses (Whisper is most accurate with several
 seconds of context), and nothing is dropped by a loudness gate. While a stretch is still being
@@ -72,6 +80,7 @@ npm start
 | `ANTHROPIC_API_KEY` | none (required)   | Anthropic credentials, kept on the server only              |
 | `TRANSLATE_MODEL`   | `claude-opus-5-5` | Model used for translation                                  |
 | `TRANSLATE_EFFORT`  | `low`             | `low` gives the lowest latency; raise it for higher quality |
+| `DEEPGRAM_API_KEY`  | none              | Live speech recognition with Deepgram Nova-3 (any device)    |
 | `PORT`              | `3000`            | HTTP port                                                   |
 
 Set `ACCESS_CODE` to require a code before anyone can translate (recommended on a public URL).
@@ -84,7 +93,8 @@ as a serverless function (`local/server.js` is only for running locally).
 
 1. Push the repo to GitHub, then in Vercel choose **Add New… → Project** and import it.
    Leave the framework preset as **Other**; `vercel.json` sets everything else.
-2. Under **Settings → Environment Variables**, add `ANTHROPIC_API_KEY`, and `ACCESS_CODE` so
+2. Under **Settings → Environment Variables**, add `DEEPGRAM_API_KEY` for speech recognition,
+   `ANTHROPIC_API_KEY` if you use Claude for translation, and `ACCESS_CODE` so
    strangers who find the URL can't spend your API credit. `TRANSLATE_MODEL` and
    `TRANSLATE_EFFORT` work here too.
 3. Deploy, then open the `https://….vercel.app` URL. Vercel serves over HTTPS, which browsers

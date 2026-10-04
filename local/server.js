@@ -3,7 +3,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleTranslate } from "../lib/handler.js";
+import { handleTranslate, handleSpeechToken, speechConfig } from "../lib/handler.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(here, "..", "public");
@@ -62,6 +62,10 @@ async function serveStatic(req, res) {
 
 const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/translate") return handleTranslateRequest(req, res);
+  if (req.method === "POST" && req.url === "/api/speech-token") {
+    return handleSpeechToken(req.headers["x-access-code"]).then(({ status, body }) => sendJson(res, status, body));
+  }
+  if (req.method === "GET" && req.url === "/api/config") return sendJson(res, 200, speechConfig());
   if (req.method === "GET" || req.method === "HEAD") return serveStatic(req, res);
   res.writeHead(405).end();
 });

@@ -1,5 +1,6 @@
 import { parseSubtitles, toSrt, findCueAt } from "./subtitles.js";
 import { LocalRecognizer } from "./local-asr.js";
+import { CloudRecognizer } from "./cloud-asr.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -157,6 +158,15 @@ engineSel.addEventListener("change", () => {
   else if (engineSel.value === "opus") setEngineStatus("Free; downloads ~80 MB the first time");
   else setEngineStatus("Uses the server's Anthropic API key");
 });
+
+// Short-lived Deepgram token from our server (the API key itself never reaches the browser).
+async function getSpeechToken(retried = false) {
+  const res = await fetch("/api/speech-token", { method: "POST", headers: { "X-Access-Code": storedCode() } });
+  if (res.status === 401 && !retried && (await askForCode())) return getSpeechToken(true);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.token) throw new Error(data.error || `Couldn't start speech recognition (HTTP ${res.status})`);
+  return data.token;
+}
 
 async function translate(lines, context = []) {
   if (engineSel.value === "opus") {
@@ -371,7 +381,30 @@ for (const tab of document.querySelectorAll(".tab")) {
       },
     );
   }
-  loadModel().catch(() => {});
+
+  // Best quality, any device: Deepgram Nova-3 in the cloud when the server has a key.
+  // Otherwise Whisper Large v3 Turbo on this computer.
+  const cloud = new CloudRecognizer({
+    onInterim: (text) => handleInterim(text),
+    onFinal: (text, opts) => addPhrase(text, opts),
+    onError: (message) => {
+      setStatus(message, true);
+      stop();
+    },
+    onStatus: (text) => {
+      if (listening) setStatus(text);
+    },
+  }, getSpeechToken);
+  let useCloud = false;
+  const speechReady = fetch("/api/config", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : {}))
+    .catch(() => ({}))
+    .then((cfg) => {
+      useCloud = Boolean(cfg.cloudSpeech);
+      $("appVersion").textContent = useCloud ? "v4 · Deepgram Nova-3" : "v4 · Whisper Large v3 Turbo (on device)";
+      if (useCloud) setStatus("Ready. Press Start.");
+      else loadModel().catch(() => {});
+    });
   const micSel = $("liveMic");
   const levelEl = $("liveLevel");
   let micStream = null;
@@ -499,6 +532,13 @@ for (const tab of document.querySelectorAll(".tab")) {
       return;
     }
     try {
+      await speechReady;
+      if (useCloud) {
+        setStatus("Connecting…");
+        await cloud.start(micStream);
+        if (listening) setStatus("Listening (Deepgram Nova-3)…");
+        return;
+      }
       setStatus("Loading the speech model…");
       await loadModel();
       if (!listening) return;
@@ -513,6 +553,7 @@ for (const tab of document.querySelectorAll(".tab")) {
   function stop() {
     listening = false;
     local.stop();
+    cloud.stop();
     closeMic();
     toggleBtn.textContent = "Start";
     toggleBtn.classList.remove("listening");
