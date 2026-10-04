@@ -276,6 +276,14 @@ for (const tab of document.querySelectorAll(".tab")) {
     statusEl.classList.toggle("error", isError);
   }
 
+  function setToggle(on) {
+    toggleBtn.classList.toggle("listening", on);
+    toggleBtn.setAttribute("aria-label", on ? "Stop listening" : "Start listening");
+    $("liveToggleLabel").textContent = on ? "Stop" : "Start";
+    document.body.classList.toggle("listening", on);
+    document.body.classList.remove("show-controls");
+  }
+
   function showEnglish(finalText, interimText = "") {
     enEl.classList.remove("faded");
     enEl.textContent = tail(finalText);
@@ -401,7 +409,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     .catch((err) => ({ error: err.message }))
     .then((cfg) => {
       useCloud = Boolean(cfg.cloudSpeech);
-      $("appVersion").textContent = useCloud ? "v5 · Deepgram Nova-3" : "v5 · on-device Whisper (no Deepgram key)";
+      $("appVersion").textContent = useCloud ? "v6 · Deepgram Nova-3" : "v6 · on-device Whisper (no Deepgram key)";
       if (useCloud) {
         setStatus("Ready. Press Start.");
       } else if (cfg.error) {
@@ -422,7 +430,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     const mics = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
     let saved = micSel.value;
     try { saved ||= localStorage.getItem("liveMic") || ""; } catch { /* storage blocked */ }
-    micSel.replaceChildren(new Option("Default microphone", ""));
+    micSel.replaceChildren(new Option("Default", ""));
     mics.forEach((d, i) => {
       if (d.deviceId === "default" || d.deviceId === "") return;
       micSel.append(new Option(d.label || `Microphone ${i + 1}`, d.deviceId));
@@ -519,9 +527,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     prepareEngine();
     keepModelsSaved();
     listening = true;
-    toggleBtn.textContent = "Stop";
-    toggleBtn.classList.add("listening");
-    document.body.classList.add("listening");
+    setToggle(true);
     keepAwake();
     setStatus("Starting microphone…");
     try {
@@ -561,9 +567,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     local.stop();
     cloud.stop();
     closeMic();
-    toggleBtn.textContent = "Start";
-    toggleBtn.classList.remove("listening");
-    document.body.classList.remove("listening");
+    setToggle(false);
     wakeLock?.release().catch(() => {});
     wakeLock = null;
     if (!statusEl.classList.contains("error")) setStatus("Stopped");
@@ -605,9 +609,36 @@ for (const tab of document.querySelectorAll(".tab")) {
     applySize();
   });
   $("liveShowEn").addEventListener("change", (e) => stage.classList.toggle("hide-en", !e.target.checked));
-  $("liveFullscreen").addEventListener("click", () => toggleFullscreen(stage));
+  // Full screen for the whole app. iPhones can't do this for web pages, but the app already
+  // fills the screen there, so the button is simply hidden.
+  const fsBtn = $("liveFullscreen");
+  const root = document.documentElement;
+  if (!(root.requestFullscreen || root.webkitRequestFullscreen) || document.fullscreenEnabled === false) fsBtn.hidden = true;
+  fsBtn.addEventListener("click", () => {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      Promise.resolve((root.requestFullscreen || root.webkitRequestFullscreen).call(root)).catch(() => {});
+    }
+  });
+
+  // While listening the controls fade away; tapping the screen shows them for a few seconds.
+  let controlsTimer = null;
+  function showControlsBriefly() {
+    document.body.classList.add("show-controls");
+    clearTimeout(controlsTimer);
+    controlsTimer = setTimeout(() => document.body.classList.remove("show-controls"), 4000);
+  }
   stage.addEventListener("click", () => {
-    if (stage.classList.contains("pseudo-fs")) pseudoFullscreen(stage, false);
+    if (listening) showControlsBriefly();
+  });
+
+  // Settings sheet
+  const settings = $("settings");
+  $("openSettings").addEventListener("click", () => settings.showModal());
+  $("closeSettings").addEventListener("click", () => settings.close());
+  settings.addEventListener("click", (e) => {
+    if (e.target === settings) settings.close(); // tap outside the sheet
   });
 })();
 

@@ -5,95 +5,182 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#000000">
-  <title>Subtitle Translator</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Subtitles">
+  <title>Subtitles · EN → RU</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <div class="title-row">
-      <h1>Subtitle Translator <span class="langs">EN → RU</span> <span class="version" id="appVersion" title="App version">v4</span></h1>
-      <label class="engine">Translate with
-        <select id="engine">
-          <option value="chrome">Chrome built-in (free)</option>
-          <option value="opus">On-device model (free, works on phones)</option>
-          <option value="claude">Claude (needs API key)</option>
-        </select>
-      </label>
-      <span id="engineStatus" class="status"></span>
-    </div>
-    <div class="loadbar" id="mtLoad" hidden><div class="loadbar-track"><i></i></div><span class="loadbar-label"></span></div>
-    <nav role="tablist">
-      <button role="tab" class="tab active" data-panel="live" aria-selected="true">Live (microphone)</button>
-      <button role="tab" class="tab" data-panel="video" aria-selected="false">Video + subtitle file</button>
-    </nav>
-  </header>
+  <!-- Icons (original line drawings), referenced with <use href="#i-…"> -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2.2" class="fill"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5"/><circle cx="12" cy="12" r="6.6"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M9.5 12h6M9.5 15.5h6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.7 2.6 14.3 0 17M12 3.5c-2.6 2.7-2.6 14.3 0 17"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 7V5h10v2M10 5v14M8 19h4M14 12v-1.5h6V12M17 10.5V19M15.8 19h2.4"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5.5 13.5H11L10 21l7.5-10.5H12z"/></symbol>
+    <symbol id="i-captions" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="3"/><path d="M10 10.5a2 2 0 1 0 0 3M16.5 10.5a2 2 0 1 0 0 3"/></symbol>
+  </svg>
 
-  <main>
+  <div class="app">
+    <!-- Top bar -->
+    <header class="topbar chrome">
+      <div class="brand">
+        <span class="brand-mark"><svg><use href="#i-captions"/></svg></span>
+        <span class="brand-text">
+          <span class="brand-name">Subtitles</span>
+          <span class="brand-sub">English → Russian · <span id="appVersion">v6</span></span>
+        </span>
+      </div>
+      <div class="segmented" role="tablist" aria-label="Mode">
+        <button role="tab" class="tab active" data-panel="live" aria-selected="true"><svg><use href="#i-mic"/></svg><span>Live</span></button>
+        <button role="tab" class="tab" data-panel="video" aria-selected="false"><svg><use href="#i-film"/></svg><span>Video</span></button>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="liveFullscreen" aria-label="Full screen" title="Full screen"><svg><use href="#i-expand"/></svg></button>
+        <button class="icon-btn" id="openSettings" aria-label="Settings" title="Settings"><svg><use href="#i-gear"/></svg></button>
+      </div>
+    </header>
+
     <!-- LIVE MODE -->
-    <section id="live" class="panel active">
-      <p class="hint">
-        Press <b>Start</b>, allow the microphone, and play the movie out loud. Every English line is
-        shown in Russian as it is spoken. Watch the level bar: it should jump whenever someone speaks.
-      </p>
-      <div class="controls">
-        <button id="liveToggle" class="primary">Start</button>
-        <label><input type="checkbox" id="liveShowEn" checked> Show English</label>
-        <select id="liveSize" aria-label="Russian text size">
-          <option value="0.4">Russian text: very small</option>
-          <option value="0.6">Russian text: small</option>
-          <option value="0.8">Russian text: medium</option>
-          <option value="1" selected>Russian text: large</option>
-          <option value="1.3">Russian text: very large</option>
-        </select>
-        <select id="liveMic" aria-label="Microphone"><option value="">Default microphone</option></select>
-        <select id="liveBoost" aria-label="Microphone boost">
-          <option value="1">Mic boost: off</option>
-          <option value="2">Mic boost: 2×</option>
-          <option value="3">Mic boost: 3×</option>
-          <option value="4">Mic boost: 4× (only if very quiet)</option>
-        </select>
-        <span class="level" title="Microphone level: it should jump when the actors speak"><i id="liveLevel"></i></span>
-        <button id="liveFullscreen">Fullscreen</button>
-        <span id="liveStatus" class="status"></span>
-      </div>
-
-      <div class="loadbar" id="asrLoad" hidden><div class="loadbar-track"><i></i></div><span class="loadbar-label"></span></div>
-
-      <div id="liveStage" class="stage">
+    <main id="live" class="panel live active">
+      <div id="liveStage" class="stage" aria-live="polite">
         <div class="sub-en" id="liveEn"></div>
-        <div class="sub-ru" id="liveRu"><span class="placeholder">Russian subtitles appear here</span></div>
+        <div class="sub-ru" id="liveRu"><span class="placeholder">
+          <span class="placeholder-icon"><svg><use href="#i-wave"/></svg></span>
+          <span class="placeholder-title">Ready when the film starts</span>
+          <span class="placeholder-text">Tap the microphone and hold your phone towards the sound. Russian subtitles appear here as people speak.</span>
+        </span></div>
+        <div class="tap-hint">Tap to show controls</div>
       </div>
-    </section>
+
+      <footer class="dock chrome">
+        <div class="loadbar" id="asrLoad" hidden><div class="loadbar-track"><i></i></div><span class="loadbar-label"></span></div>
+        <div class="loadbar" id="mtLoad" hidden><div class="loadbar-track"><i></i></div><span class="loadbar-label"></span></div>
+        <p id="liveStatus" class="status" role="status"></p>
+        <div class="dock-row">
+          <span class="level" title="Microphone level"><i id="liveLevel"></i></span>
+          <button id="liveToggle" class="record" aria-label="Start listening">
+            <svg class="when-idle"><use href="#i-mic"/></svg>
+            <svg class="when-listening"><use href="#i-stop"/></svg>
+          </button>
+          <span class="record-label" id="liveToggleLabel">Start</span>
+        </div>
+      </footer>
+    </main>
 
     <!-- VIDEO MODE -->
-    <section id="video" class="panel">
-      <p class="hint">
-        Load a video and its English <code>.srt</code> or <code>.vtt</code> subtitles. Translation
-        starts at the current playback position and keeps ahead of it, so you can press play right away.
-        Seeking moves the translation to the new position.
-      </p>
-      <div class="controls">
-        <label class="file">Video <input type="file" id="videoFile" accept="video/*"></label>
-        <label class="file">Subtitles <input type="file" id="subFile" accept=".srt,.vtt,text/vtt"></label>
-        <select id="subMode" aria-label="Subtitle display">
-          <option value="ru">Russian only</option>
-          <option value="both">Russian + English</option>
-          <option value="en">English only</option>
-        </select>
-        <button id="downloadSrt" disabled>Download Russian .srt</button>
-      </div>
-      <div class="progress-row">
-        <progress id="subProgress" value="0" max="1"></progress>
-        <span id="subStatus" class="status">No subtitles loaded</span>
-      </div>
+    <main id="video" class="panel video">
+      <div class="video-wrap">
+        <section class="card intro">
+          <h2>Translate a video</h2>
+          <p>Open a video and its English subtitle file. Russian subtitles appear over the picture, translated just ahead of where you are.</p>
+          <div class="file-row">
+            <label class="file-btn"><svg><use href="#i-film"/></svg><span>Choose video</span><input type="file" id="videoFile" accept="video/*"></label>
+            <label class="file-btn"><svg><use href="#i-doc"/></svg><span>Choose subtitles</span><input type="file" id="subFile" accept=".srt,.vtt,text/vtt"></label>
+          </div>
+          <div class="progress-row">
+            <progress id="subProgress" value="0" max="1"></progress>
+            <span id="subStatus" class="status">No subtitles loaded</span>
+          </div>
+          <div class="file-row">
+            <div class="select-wrap">
+              <select id="subMode" aria-label="Subtitles shown">
+                <option value="ru">Russian only</option>
+                <option value="both">Russian and English</option>
+                <option value="en">English only</option>
+              </select>
+            </div>
+            <button id="downloadSrt" class="pill-btn" disabled><svg><use href="#i-down"/></svg><span>Download Russian .srt</span></button>
+          </div>
+        </section>
 
-      <div id="player" class="player">
-        <video id="videoEl" controls playsinline controlslist="nofullscreen"></video>
-        <div id="overlay" class="overlay"></div>
-        <button id="playerFullscreen" class="fs-btn" title="Fullscreen with subtitles">⛶</button>
+        <div id="player" class="player">
+          <video id="videoEl" controls playsinline controlslist="nofullscreen"></video>
+          <div id="overlay" class="overlay"></div>
+          <button id="playerFullscreen" class="icon-btn fs-btn" aria-label="Full screen with subtitles"><svg><use href="#i-expand"/></svg></button>
+        </div>
       </div>
-    </section>
-  </main>
+    </main>
+  </div>
+
+  <!-- Settings sheet -->
+  <dialog id="settings" class="sheet" aria-labelledby="settingsTitle">
+    <div class="sheet-grabber" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <h2 id="settingsTitle">Settings</h2>
+      <button class="icon-btn" id="closeSettings" aria-label="Done"><svg><use href="#i-close"/></svg></button>
+    </div>
+
+    <p class="group-title">Subtitles</p>
+    <div class="group">
+      <label class="row">
+        <span class="row-icon blue"><svg><use href="#i-text"/></svg></span>
+        <span class="row-label">Text size</span>
+        <span class="row-control select-wrap">
+          <select id="liveSize">
+            <option value="0.6">Small</option>
+            <option value="0.8">Medium</option>
+            <option value="1" selected>Large</option>
+            <option value="1.3">Extra large</option>
+            <option value="1.6">Huge</option>
+          </select>
+        </span>
+      </label>
+      <label class="row">
+        <span class="row-icon gray"><svg><use href="#i-captions"/></svg></span>
+        <span class="row-label">Show English too</span>
+        <span class="row-control"><input type="checkbox" id="liveShowEn" class="switch" checked></span>
+      </label>
+    </div>
+
+    <p class="group-title">Translation</p>
+    <div class="group">
+      <label class="row">
+        <span class="row-icon green"><svg><use href="#i-globe"/></svg></span>
+        <span class="row-label">Translator</span>
+        <span class="row-control select-wrap">
+          <select id="engine">
+            <option value="chrome">Chrome built-in</option>
+            <option value="opus">On this device</option>
+            <option value="claude">Claude (best)</option>
+          </select>
+        </span>
+      </label>
+      <p class="row-note" id="engineStatus"></p>
+    </div>
+
+    <p class="group-title">Microphone</p>
+    <div class="group">
+      <label class="row">
+        <span class="row-icon red"><svg><use href="#i-mic"/></svg></span>
+        <span class="row-label">Microphone</span>
+        <span class="row-control select-wrap">
+          <select id="liveMic"><option value="">Default</option></select>
+        </span>
+      </label>
+      <label class="row">
+        <span class="row-icon orange"><svg><use href="#i-bolt"/></svg></span>
+        <span class="row-label">Boost</span>
+        <span class="row-control select-wrap">
+          <select id="liveBoost">
+            <option value="1">Off</option>
+            <option value="2">2×</option>
+            <option value="3">3×</option>
+            <option value="4">4× (very quiet rooms)</option>
+          </select>
+        </span>
+      </label>
+    </div>
+    <p class="sheet-foot">While listening, microphone audio is streamed over an encrypted connection to the speech recognition service. The app itself doesn't save any audio.</p>
+  </dialog>
 
   <script type="module" src="app.js"></script>
 </body>
