@@ -60,6 +60,8 @@
         </span></div>
         <div class="tap-hint">Tap to show controls</div>
       </div>
+      <button class="exit-cinema" id="exitCinema"><svg><use href="#i-close"/></svg><span>Exit full screen</span></button>
+      <div class="toast" id="toast" role="status" hidden></div>
 
       <footer class="dock chrome">
         <div class="loadbar" id="asrLoad" hidden><div class="loadbar-track"><i></i></div><span class="loadbar-label"></span></div>
@@ -67,11 +69,16 @@
         <p id="liveStatus" class="status" role="status"></p>
         <div class="dock-row">
           <span class="level" title="Microphone level"><i id="liveLevel"></i></span>
-          <button id="liveToggle" class="record" aria-label="Start listening">
-            <svg class="when-idle"><use href="#i-mic"/></svg>
-            <svg class="when-listening"><use href="#i-stop"/></svg>
+          <div class="record-col">
+            <button id="liveToggle" class="record" aria-label="Start listening">
+              <svg class="when-idle"><use href="#i-mic"/></svg>
+              <svg class="when-listening"><use href="#i-stop"/></svg>
+            </button>
+            <span class="record-label" id="liveToggleLabel">Start</span>
+          </div>
+          <button class="cinema-btn" id="cinemaBtn" aria-label="Full screen subtitles">
+            <svg><use href="#i-expand"/></svg><span>Full screen</span>
           </button>
-          <span class="record-label" id="liveToggleLabel">Start</span>
         </div>
       </footer>
     </main>

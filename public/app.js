@@ -21,12 +21,19 @@ function askForCode() {
 }
 
 // A progress bar: pct 0-100, or null for "working, no percentage" (an animated bar).
+// While any bar is showing, keep it on screen even when the controls are hidden.
+const activeBars = new Set();
+function syncDownloading() {
+  document.body.classList.toggle("downloading", activeBars.size > 0);
+}
 function loadBar(id) {
   const el = $(id);
   const fill = el.querySelector("i");
   const label = el.querySelector(".loadbar-label");
   return {
     set(pct, text) {
+      activeBars.add(id);
+      syncDownloading();
       el.hidden = false;
       el.classList.toggle("indeterminate", pct == null);
       fill.style.width = pct == null ? "" : `${pct}%`;
@@ -34,6 +41,8 @@ function loadBar(id) {
     },
     done() {
       el.hidden = true;
+      activeBars.delete(id);
+      syncDownloading();
     },
   };
 }
@@ -79,7 +88,7 @@ function opusTranslate(texts, type = "translate") {
         const pct = data.total ? Math.round((data.loaded / data.total) * 100) : 0;
         const text = data.saved
           ? `Loading saved translation model… ${pct}%`
-          : `Downloading translation model… ${pct}% · ${Math.round(data.loaded / 1e6)} of ${Math.round(data.total / 1e6)} MB (only the first time)`;
+          : `Downloading the Russian translator (one time only)… ${pct}% · ${Math.round(data.loaded / 1e6)} of ${Math.round(data.total / 1e6)} MB`;
         setEngineStatus(text);
         mtBar.set(pct, text);
         return;
@@ -609,18 +618,52 @@ for (const tab of document.querySelectorAll(".tab")) {
     applySize();
   });
   $("liveShowEn").addEventListener("change", (e) => stage.classList.toggle("hide-en", !e.target.checked));
-  // Full screen for the whole app. iPhones can't do this for web pages, but the app already
-  // fills the screen there, so the button is simply hidden.
-  const fsBtn = $("liveFullscreen");
+  // Full screen (cinema mode): only the subtitles stay on screen. Where the browser allows it
+  // (Android, computers) the page also enters real full screen; iPhone Safari doesn't allow
+  // that for web pages, so there the app hides its own controls and suggests Add to Home Screen.
   const root = document.documentElement;
-  if (!(root.requestFullscreen || root.webkitRequestFullscreen) || document.fullscreenEnabled === false) fsBtn.hidden = true;
-  fsBtn.addEventListener("click", () => {
-    if (document.fullscreenElement || document.webkitFullscreenElement) {
-      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-    } else {
+  const canRealFullscreen = Boolean(root.requestFullscreen || root.webkitRequestFullscreen) && document.fullscreenEnabled !== false;
+  const inRealFullscreen = () => Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  function enterCinema() {
+    document.body.classList.add("immersive");
+    if (canRealFullscreen && !inRealFullscreen()) {
       Promise.resolve((root.requestFullscreen || root.webkitRequestFullscreen).call(root)).catch(() => {});
     }
+    showControlsBriefly();
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    let tipShown = false;
+    try { tipShown = localStorage.getItem("a2hsTip") === "1"; } catch { /* storage blocked */ }
+    if (isIOS && !navigator.standalone && !tipShown) {
+      toast("Tip: for true full screen, tap Share → Add to Home Screen and open Subtitles from there.");
+      try { localStorage.setItem("a2hsTip", "1"); } catch { /* storage blocked */ }
+    }
+  }
+  function exitCinema() {
+    document.body.classList.remove("immersive", "show-controls");
+    if (inRealFullscreen()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  }
+  const toggleCinema = () => (document.body.classList.contains("immersive") ? exitCinema() : enterCinema());
+  $("liveFullscreen").addEventListener("click", toggleCinema);
+  $("cinemaBtn").addEventListener("click", enterCinema);
+  $("exitCinema").addEventListener("click", (e) => {
+    e.stopPropagation();
+    exitCinema();
   });
+  // Leaving real full screen with Esc or a swipe also leaves cinema mode.
+  for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) {
+    document.addEventListener(ev, () => {
+      if (!inRealFullscreen()) document.body.classList.remove("immersive", "show-controls");
+    });
+  }
+
+  let toastTimer = null;
+  function toast(text) {
+    const el = $("toast");
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (el.hidden = true), 6000);
+  }
 
   // While listening the controls fade away; tapping the screen shows them for a few seconds.
   let controlsTimer = null;
@@ -630,7 +673,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     controlsTimer = setTimeout(() => document.body.classList.remove("show-controls"), 4000);
   }
   stage.addEventListener("click", () => {
-    if (listening) showControlsBriefly();
+    if (listening || document.body.classList.contains("immersive")) showControlsBriefly();
   });
 
   // Settings sheet
