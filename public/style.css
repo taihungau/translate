@@ -111,6 +111,13 @@ button { cursor: pointer; }
   background: var(--surface-2); color: var(--text-2); margin-bottom: 6px;
 }
 .placeholder-icon svg { width: 30px; height: 30px; }
+.mascot {
+  width: min(118px, 30vw); height: auto; margin-bottom: 6px;
+  transform: rotate(-4deg); filter: drop-shadow(0 8px 18px rgba(0,0,0,.6));
+  transition: filter .4s var(--ease);
+}
+body.listening .mascot { animation: wobble 2.4s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,45,45,.55)); }
+@keyframes wobble { 0%, 100% { transform: rotate(-4deg) scale(1); } 50% { transform: rotate(3deg) scale(1.04); } }
 .placeholder-title { font-size: 22px; font-weight: 600; letter-spacing: -.01em; color: var(--text); }
 .placeholder-text { font-size: 15px; font-weight: 400; color: var(--text-2); line-height: 1.4; letter-spacing: 0; }
 

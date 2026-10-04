@@ -1,7 +1,7 @@
 // Keeps the app and its speech/translation library available offline (a cinema may have no
 // signal). The models themselves are stored by transformers.js in its own cache.
-const CACHE = "subtitle-app-v6";
-const APP_FILES = ["./", "index.html", "style.css", "app.js", "subtitles.js", "local-asr.js", "asr-worker.js", "mt-worker.js", "cloud-asr.js"];
+const CACHE = "subtitle-app-v7";
+const APP_FILES = ["./", "index.html", "style.css", "app.js", "subtitles.js", "local-asr.js", "asr-worker.js", "mt-worker.js", "cloud-asr.js", "img/laser-eyes.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(APP_FILES)).then(() => self.skipWaiting()));
