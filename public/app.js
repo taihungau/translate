@@ -397,13 +397,19 @@ for (const tab of document.querySelectorAll(".tab")) {
   }, getSpeechToken);
   let useCloud = false;
   const speechReady = fetch("/api/config", { cache: "no-store" })
-    .then((r) => (r.ok ? r.json() : {}))
-    .catch(() => ({}))
+    .then((r) => (r.ok ? r.json() : { error: `HTTP ${r.status}` }))
+    .catch((err) => ({ error: err.message }))
     .then((cfg) => {
       useCloud = Boolean(cfg.cloudSpeech);
-      $("appVersion").textContent = useCloud ? "v4 · Deepgram Nova-3" : "v4 · Whisper Large v3 Turbo (on device)";
-      if (useCloud) setStatus("Ready. Press Start.");
-      else loadModel().catch(() => {});
+      $("appVersion").textContent = useCloud ? "v5 · Deepgram Nova-3" : "v5 · on-device Whisper (no Deepgram key)";
+      if (useCloud) {
+        setStatus("Ready. Press Start.");
+      } else if (cfg.error) {
+        setStatus(`Couldn't ask the server which speech recognition to use (${cfg.error}). Pressing Start uses on-device Whisper (1.3 GB download).`, true);
+      } else {
+        // Don't start a big download unasked: say why Deepgram isn't being used.
+        setStatus(`The server has no Deepgram key (${cfg.environment || "?"} deployment). In Vercel add DEEPGRAM_API_KEY for Production, then redeploy. Pressing Start now uses on-device Whisper instead (1.3 GB download).`, true);
+      }
     });
   const micSel = $("liveMic");
   const levelEl = $("liveLevel");
