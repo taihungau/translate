@@ -57,12 +57,12 @@ async function load({ repo, dtype }) {
   self.postMessage({ type: "ready", device: "webgpu" });
 }
 
-async function transcribe({ id, audio, final, chunk }) {
+async function transcribe({ id, audio, final, chunk, language = "english" }) {
   if (!asr) throw new Error("The speech model is not loaded");
   const started = performance.now();
   const seconds = audio.length / 16000;
   const out = await asr(audio, {
-    language: "english",
+    language,
     task: "transcribe",
     // Cap output at a fast speaking rate so the model can't loop on noise for long.
     max_new_tokens: Math.ceil(seconds * 7) + 8,

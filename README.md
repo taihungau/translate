@@ -1,6 +1,8 @@
-# Subtitle Translator (EN → RU)
+# Subtitle Translator (EN ⇄ RU)
 
 A small web app that translates English movie subtitles into Russian in real time, using Claude.
+The **EN ⇄ RU** button at the top swaps the languages, so it translates Russian into English too
+(speech recognition then listens for Russian, and subtitle files are read as Russian).
 
 It has two modes:
 
@@ -17,6 +19,20 @@ It has two modes:
   + English) are drawn over the video, including in fullscreen. You can download the result as
   a Russian `.srt` file at any time.
 
+## Pronunciation
+
+Under each line the app shows how to say it in the other alphabet, so either side can read it
+aloud:
+
+- **Russian in English letters:** "Что ты делаешь сегодня?" → *Shto ty delayesh sevodnya?*
+  Spelled the way it is said (что → *shto*, его → *yevo*, кажется → *kazhetsa*).
+- **English in Russian letters:** "I don't know what you're talking about." →
+  *Ай доунт ноу уат юр то́кинг аба́ут.* Words are looked up in the CMU Pronouncing Dictionary
+  (downloaded once from jsDelivr, about 1 MB compressed, then kept for offline use) and the
+  stressed syllable is marked. Words it doesn't know fall back to spelling rules.
+
+Both can be turned off in Settings → Pronunciation.
+
 ## Translation engines
 
 Pick the engine at the top of the page:
@@ -24,7 +40,7 @@ Pick the engine at the top of the page:
 - **Chrome built-in (default, free).** Desktop Chrome 138 or later has an on-device
   translator. No API key or server is needed, and the first use downloads Chrome's Russian
   language pack. Translation is literal and doesn't use earlier lines for context.
-- **On-device model (free, works on phones).** Opus-MT English→Russian running in the browser
+- **On-device model (free, works on phones).** Opus-MT English→Russian (or Russian→English) running in the browser
   with transformers.js, used automatically where Chrome's translator is missing (phones, Safari,
   Firefox). The first use downloads about 80 MB, then it is cached.
 - **Claude.** More natural, context-aware subtitles. It needs `ANTHROPIC_API_KEY` set on the
@@ -122,7 +138,7 @@ a line, the API retries it on a fallback model inside the same call.
 `POST /api/translate`
 
 ```json
-{ "lines": [{ "id": "1", "text": "Wait up!" }], "context": ["earlier English line"] }
+{ "lines": [{ "id": "1", "text": "Wait up!" }], "context": ["earlier English line"], "direction": "en-ru" }
 ```
 
 returns
@@ -131,7 +147,7 @@ returns
 { "translations": [{ "id": "1", "text": "Подожди!" }] }
 ```
 
-Each request accepts up to 60 lines. Lines the model fails to return are left out of the
+`direction` is `"en-ru"` (the default) or `"ru-en"`. Each request accepts up to 60 lines. Lines the model fails to return are left out of the
 response, and the client retries them.
 
 ## Development

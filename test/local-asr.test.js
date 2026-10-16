@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { cleanTranscript, MODEL } from "../public/local-asr.js";
 
 test("drops text speech models invent for music and silence", () => {
-  for (const junk of ["[Music]", "(applause)", "♪♪", "Thank you.", "Thanks for watching!", " you ", "...", "[BLANK_AUDIO]"]) {
+  for (const junk of ["[Music]", "(applause)", "♪♪", "Thank you.", "Thanks for watching!", " you ", "...", "[BLANK_AUDIO]",
+    "Продолжение следует...", "Субтитры сделал DimaTorzok", "Спасибо за просмотр!"]) {
     assert.equal(cleanTranscript(junk), "", junk);
   }
 });

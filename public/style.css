@@ -76,6 +76,13 @@ button { cursor: pointer; }
 .segmented .tab.active { background: #636366; color: var(--text); box-shadow: 0 3px 8px rgba(0,0,0,.3); }
 
 .topbar-actions { display: flex; gap: 8px; }
+.dir-btn {
+  height: 40px; border-radius: 20px; border: 0; padding: 0 14px; display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(118,118,128,.24); color: var(--text); font-size: 14px; font-weight: 600; letter-spacing: .02em;
+  transition: transform .15s var(--ease), background .2s;
+}
+.dir-btn svg { width: 18px; height: 18px; color: var(--text-2); }
+.dir-btn:active { transform: scale(.95); background: rgba(118,118,128,.4); }
 .icon-btn {
   width: 40px; height: 40px; border-radius: 50%; border: 0; display: grid; place-items: center;
   background: rgba(118,118,128,.24); color: var(--text);
@@ -89,21 +96,26 @@ button { cursor: pointer; }
   flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: clamp(8px, 2vh, 18px); text-align: center;
   padding: 16px calc(24px + var(--safe-r)) 16px calc(24px + var(--safe-l));
-  --ru-scale: 1;
+  --sub-scale: 1;
 }
-.sub-en {
+.sub-orig {
   color: var(--text-2); font-weight: 500; letter-spacing: -.01em; max-width: 30ch;
   font-size: clamp(16px, min(3.6vw, 4.2vh), 34px); line-height: 1.25; min-height: 1.25em;
   text-wrap: balance; transition: opacity .45s var(--ease);
 }
-.sub-en .interim { color: var(--text-3); }
-.sub-ru {
+.sub-orig .interim { color: var(--text-3); }
+.sub-trans {
   color: #fff; font-weight: 700; letter-spacing: -.02em; max-width: 22ch;
-  font-size: calc(clamp(26px, min(7.2vw, 8.5vh), 84px) * var(--ru-scale)); line-height: 1.12;
+  font-size: calc(clamp(26px, min(7.2vw, 8.5vh), 84px) * var(--sub-scale)); line-height: 1.12;
   text-wrap: balance; transition: opacity .45s var(--ease);
 }
-.sub-en.faded, .sub-ru.faded { opacity: 0; }
-.hide-en .sub-en { display: none; }
+.sub-orig.faded, .sub-trans.faded { opacity: 0; }
+.hide-orig .sub-orig { display: none; }
+/* Pronunciation in the other alphabet, right under its line. */
+.say { font-weight: 400; font-style: italic; letter-spacing: 0; color: var(--text-2); margin-top: .2em; }
+.say:empty { display: none; }
+.sub-orig .say { font-size: .78em; color: var(--text-3); }
+.sub-trans .say { font-size: .46em; line-height: 1.25; }
 
 .placeholder { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 30ch; margin: 0 auto; }
 .placeholder-icon {
@@ -218,12 +230,15 @@ body.listening .dock .status:empty { display: none; }
   .dock { padding-top: 6px; gap: 6px; }
   .record { width: 58px; height: 58px; }
   .record svg { width: 26px; height: 26px; }
-  .sub-ru { max-width: 34ch; }
-  .sub-en { max-width: 44ch; }
+  .sub-trans { max-width: 34ch; }
+  .sub-orig { max-width: 44ch; }
 }
 @media (max-width: 420px) {
-  .brand-text { display: none; }
+  .brand { display: none; }
+  .topbar { justify-content: space-between; }
   .segmented .tab { padding: 6px 12px; }
+  .dir-btn { padding: 0 10px; gap: 3px; }
+  .dir-btn svg { width: 15px; height: 15px; }
 }
 
 /* ---------- settings sheet ---------- */
@@ -249,7 +264,7 @@ body.listening .dock .status:empty { display: none; }
 .row-icon svg { width: 18px; height: 18px; stroke-width: 2; }
 .row-icon.blue { background: var(--accent); } .row-icon.green { background: var(--green); }
 .row-icon.red { background: var(--red); } .row-icon.orange { background: var(--orange); }
-.row-icon.gray { background: var(--gray); }
+.row-icon.gray { background: var(--gray); } .row-icon.purple { background: #bf5af2; }
 .row-label { flex: 1 0 auto; }
 .row-control { flex: 0 1 auto; min-width: 0; max-width: 58%; display: flex; justify-content: flex-end; overflow: hidden; }
 .row-control select { width: 100%; }
@@ -316,6 +331,7 @@ progress::-moz-progress-bar { background: var(--accent); }
 }
 .overlay .line.en { font-size: clamp(13px, 1.8vw, 24px); color: #ddd; font-weight: 500; margin-top: 4px; }
 .overlay .line.wait { color: #aaa; font-style: italic; }
+.overlay .line.say { font-size: clamp(12px, 1.6vw, 21px); color: #ccc; font-weight: 400; font-style: italic; margin-top: 2px; }
 .fs-btn { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,.45); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 
 @media (prefers-reduced-motion: reduce) {

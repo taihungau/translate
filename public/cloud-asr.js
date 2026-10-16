@@ -6,9 +6,10 @@ const SAMPLE_RATE = 16000;
 const SEND_EVERY = 1600; // samples (100 ms) per message
 const MAX_LINE_CHARS = 160; // a run-on line is finished here so translations stay short
 
-export const DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen?" + new URLSearchParams({
+/** @param {"en" | "ru"} language the language being spoken */
+export const deepgramUrl = (language = "en") => "wss://api.deepgram.com/v1/listen?" + new URLSearchParams({
   model: "nova-3",
-  language: "en",
+  language,
   encoding: "linear16",
   sample_rate: String(SAMPLE_RATE),
   channels: "1",
@@ -45,10 +46,12 @@ export class CloudRecognizer {
     this.buffer = new Int16Array(SEND_EVERY);
     this.filled = 0;
     this.failures = [];
+    this.language = "en";
   }
 
-  async start(stream) {
+  async start(stream, language = "en") {
     this.active = true;
+    this.language = language;
     this.ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
     await this.ctx.resume().catch(() => {});
     const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
@@ -68,7 +71,7 @@ export class CloudRecognizer {
     const token = await this.getToken();
     if (!this.active) return;
     await new Promise((resolve, reject) => {
-      const ws = new WebSocket(DEEPGRAM_URL, ["bearer", token]);
+      const ws = new WebSocket(deepgramUrl(this.language), ["bearer", token]);
       ws.binaryType = "arraybuffer";
       let opened = false;
       ws.onopen = () => {

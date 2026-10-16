@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Subtitles">
-  <title>Subtitles · EN → RU</title>
+  <title>Subtitles · EN ⇄ RU</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,6 +26,8 @@
     <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.7 2.6 14.3 0 17M12 3.5c-2.6 2.7-2.6 14.3 0 17"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 7V5h10v2M10 5v14M8 19h4M14 12v-1.5h6V12M17 10.5V19M15.8 19h2.4"/></symbol>
     <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5.5 13.5H11L10 21l7.5-10.5H12z"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8.5h14.5M15 5l3.5 3.5L15 12M20 15.5H5.5M9 12l-3.5 3.5L9 19"/></symbol>
+    <symbol id="i-say" viewBox="0 0 24 24"><path d="M4 6.5h9M8.5 4.5v2M11 6.5c-.6 3.6-3 6.4-6 7.8M6.5 9.5c1.1 1.9 2.7 3.4 4.6 4.3M12.5 20l3.5-8.5 3.5 8.5M13.7 17.2h4.6"/></symbol>
     <symbol id="i-captions" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="3"/><path d="M10 10.5a2 2 0 1 0 0 3M16.5 10.5a2 2 0 1 0 0 3"/></symbol>
   </svg>
 
@@ -36,7 +38,7 @@
         <span class="brand-mark"><svg><use href="#i-captions"/></svg></span>
         <span class="brand-text">
           <span class="brand-name">Subtitles</span>
-          <span class="brand-sub">English → Russian · <span id="appVersion">v6</span></span>
+          <span class="brand-sub"><span id="dirName">English → Russian</span> · <span id="appVersion">v7</span></span>
         </span>
       </div>
       <div class="segmented" role="tablist" aria-label="Mode">
@@ -44,6 +46,9 @@
         <button role="tab" class="tab" data-panel="video" aria-selected="false"><svg><use href="#i-film"/></svg><span>Video</span></button>
       </div>
       <div class="topbar-actions">
+        <button class="dir-btn" id="direction" aria-label="Translating English to Russian. Switch to Russian to English" title="Swap languages">
+          <span id="dirFrom">EN</span><svg><use href="#i-swap"/></svg><span id="dirTo">RU</span>
+        </button>
         <button class="icon-btn" id="liveFullscreen" aria-label="Full screen" title="Full screen"><svg><use href="#i-expand"/></svg></button>
         <button class="icon-btn" id="openSettings" aria-label="Settings" title="Settings"><svg><use href="#i-gear"/></svg></button>
       </div>
@@ -52,12 +57,13 @@
     <!-- LIVE MODE -->
     <main id="live" class="panel live active">
       <div id="liveStage" class="stage" aria-live="polite">
-        <div class="sub-en" id="liveEn"></div>
-        <div class="sub-ru" id="liveRu"><span class="placeholder">
+        <!-- What was said, then its translation; each with a pronunciation line in the other alphabet. -->
+        <div class="sub-orig" id="liveOrig"><div class="sub-text"></div><div class="say"></div></div>
+        <div class="sub-trans" id="liveTrans"><div class="sub-text"><span class="placeholder">
           <img class="mascot" src="img/laser-eyes.png" alt="" width="118" height="186">
           <span class="placeholder-title">Ready when the film starts</span>
-          <span class="placeholder-text">Tap the microphone and hold your phone towards the sound. Russian subtitles appear here as people speak.</span>
-        </span></div>
+          <span class="placeholder-text">Tap the microphone and hold your phone towards the sound. Translated subtitles appear here as people speak.</span>
+        </span></div><div class="say"></div></div>
         <div class="tap-hint">Tap to show controls</div>
       </div>
       <button class="exit-cinema" id="exitCinema"><svg><use href="#i-close"/></svg><span>Exit full screen</span></button>
@@ -88,7 +94,7 @@
       <div class="video-wrap">
         <section class="card intro">
           <h2>Translate a video</h2>
-          <p>Open a video and its English subtitle file. Russian subtitles appear over the picture, translated just ahead of where you are.</p>
+          <p>Open a video and its <span class="dir-from-name">English</span> subtitle file. <span class="dir-to-name">Russian</span> subtitles appear over the picture, translated just ahead of where you are.</p>
           <div class="file-row">
             <label class="file-btn"><svg><use href="#i-film"/></svg><span>Choose video</span><input type="file" id="videoFile" accept="video/*"></label>
             <label class="file-btn"><svg><use href="#i-doc"/></svg><span>Choose subtitles</span><input type="file" id="subFile" accept=".srt,.vtt,text/vtt"></label>
@@ -100,12 +106,12 @@
           <div class="file-row">
             <div class="select-wrap">
               <select id="subMode" aria-label="Subtitles shown">
-                <option value="ru">Russian only</option>
-                <option value="both">Russian and English</option>
-                <option value="en">English only</option>
+                <option value="ru">Translation only</option>
+                <option value="both">Translation and original</option>
+                <option value="en">Original only</option>
               </select>
             </div>
-            <button id="downloadSrt" class="pill-btn" disabled><svg><use href="#i-down"/></svg><span>Download Russian .srt</span></button>
+            <button id="downloadSrt" class="pill-btn" disabled><svg><use href="#i-down"/></svg><span id="downloadLabel">Download Russian .srt</span></button>
           </div>
         </section>
 
@@ -143,9 +149,24 @@
       </label>
       <label class="row">
         <span class="row-icon gray"><svg><use href="#i-captions"/></svg></span>
-        <span class="row-label">Show English too</span>
-        <span class="row-control"><input type="checkbox" id="liveShowEn" class="switch" checked></span>
+        <span class="row-label">Show original too</span>
+        <span class="row-control"><input type="checkbox" id="liveShowOrig" class="switch" checked></span>
       </label>
+    </div>
+
+    <p class="group-title">Pronunciation</p>
+    <div class="group">
+      <label class="row">
+        <span class="row-icon purple"><svg><use href="#i-say"/></svg></span>
+        <span class="row-label">Russian in English letters</span>
+        <span class="row-control"><input type="checkbox" id="sayRu" class="switch" checked></span>
+      </label>
+      <label class="row">
+        <span class="row-icon purple"><svg><use href="#i-say"/></svg></span>
+        <span class="row-label">English in Russian letters</span>
+        <span class="row-control"><input type="checkbox" id="sayEn" class="switch" checked></span>
+      </label>
+      <p class="row-note">Shown under each line: “Привет” → <i>Privet</i>, “Hello” → <i>хало́у</i>. The English one downloads a 1 MB dictionary the first time.</p>
     </div>
 
     <p class="group-title">Translation</p>

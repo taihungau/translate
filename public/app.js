@@ -1,6 +1,7 @@
 import { parseSubtitles, toSrt, findCueAt } from "./subtitles.js";
 import { LocalRecognizer } from "./local-asr.js";
 import { CloudRecognizer } from "./cloud-asr.js";
+import { pronounce, loadDictionary } from "./pronounce.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -49,13 +50,63 @@ function loadBar(id) {
 const mtBar = loadBar("mtLoad");
 const asrBar = loadBar("asrLoad");
 
+// ---------------------------------------------------------------- direction
+// English → Russian or Russian → English. Speech recognition listens for the "from" language.
+const NAMES = { en: "English", ru: "Russian" };
+let direction = "en-ru";
+try { if (localStorage.getItem("direction") === "ru-en") direction = "ru-en"; } catch { /* storage blocked */ }
+const fromLang = () => direction.slice(0, 2);
+const toLang = () => direction.slice(3);
+
+function showDirection() {
+  const from = fromLang();
+  const to = toLang();
+  $("dirFrom").textContent = from.toUpperCase();
+  $("dirTo").textContent = to.toUpperCase();
+  $("dirName").textContent = `${NAMES[from]} → ${NAMES[to]}`;
+  $("direction").setAttribute("aria-label", `Translating ${NAMES[from]} to ${NAMES[to]}. Switch to ${NAMES[to]} to ${NAMES[from]}`);
+  for (const el of document.querySelectorAll(".dir-from-name")) el.textContent = NAMES[from];
+  for (const el of document.querySelectorAll(".dir-to-name")) el.textContent = NAMES[to];
+}
+showDirection();
+
+$("direction").addEventListener("click", () => {
+  direction = direction === "en-ru" ? "ru-en" : "en-ru";
+  try { localStorage.setItem("direction", direction); } catch { /* storage blocked */ }
+  showDirection();
+  prepareEngine();
+  if (engineSel.value === "opus") opusTranslate([], "load").catch(() => {});
+  document.dispatchEvent(new Event("directionchange"));
+});
+
+// ---------------------------------------------------------------- pronunciation
+// A line under each subtitle saying how to pronounce it in the other alphabet:
+// Russian in Latin letters, English in Russian letters.
+const saySwitch = { ru: $("sayRu"), en: $("sayEn") };
+const sayChanged = () => document.dispatchEvent(new Event("saychange"));
+for (const [lang, box] of Object.entries(saySwitch)) {
+  try { box.checked = localStorage.getItem(`say-${lang}`) !== "0"; } catch { /* storage blocked */ }
+  box.addEventListener("change", () => {
+    try { localStorage.setItem(`say-${lang}`, box.checked ? "1" : "0"); } catch { /* storage blocked */ }
+    if (lang === "en" && box.checked) loadDictionary().then(sayChanged);
+    sayChanged();
+  });
+}
+if (saySwitch.en.checked) loadDictionary().then(sayChanged);
+
+/** How to pronounce `text` (in language `lang`), or "" when that hint is off. */
+function sayFor(text, lang) {
+  return saySwitch[lang].checked ? pronounce(text, lang) : "";
+}
+// The hint is written in the other alphabet, which screen readers need to know.
+const SAY_LANG = { ru: "ru-Latn", en: "en-Cyrl" };
+
 // ---------------------------------------------------------------- translation engines
 // "chrome": Chrome's on-device Translator API (Chrome 138+ desktop). Free, no key, no server.
 // "claude": POST /api/translate, which calls Claude with the server's ANTHROPIC_API_KEY.
 const engineSel = $("engine");
 const engineStatus = $("engineStatus");
 const hasBuiltIn = "Translator" in self;
-const PAIR = { sourceLanguage: "en", targetLanguage: "ru" };
 
 function setEngineStatus(text, isError = false) {
   engineStatus.textContent = text;
@@ -88,7 +139,7 @@ function opusTranslate(texts, type = "translate") {
         const pct = data.total ? Math.round((data.loaded / data.total) * 100) : 0;
         const text = data.saved
           ? `Loading saved translation model… ${pct}%`
-          : `Downloading the Russian translator (one time only)… ${pct}% · ${Math.round(data.loaded / 1e6)} of ${Math.round(data.total / 1e6)} MB`;
+          : `Downloading the translation model (one time only)… ${pct}% · ${Math.round(data.loaded / 1e6)} of ${Math.round(data.total / 1e6)} MB`;
         setEngineStatus(text);
         mtBar.set(pct, text);
         return;
@@ -109,20 +160,22 @@ function opusTranslate(texts, type = "translate") {
   const id = mtNextId++;
   return new Promise((resolve, reject) => {
     mtPending.set(id, { resolve, reject });
-    mtWorker.postMessage({ type, id, texts });
+    mtWorker.postMessage({ type, id, texts, direction });
   });
 }
 
-async function createBuiltIn() {
-  const availability = await Translator.availability(PAIR);
+async function createBuiltIn(dir) {
+  const [from, to] = dir.split("-");
+  const pair = { sourceLanguage: from, targetLanguage: to };
+  const availability = await Translator.availability(pair);
   if (availability === "unavailable") {
-    throw new Error("Chrome can't translate English to Russian on this device. Switch to Claude.");
+    throw new Error(`Chrome can't translate ${NAMES[from]} to ${NAMES[to]} on this device. Switch to Claude.`);
   }
   const translator = await Translator.create({
-    ...PAIR,
+    ...pair,
     monitor(m) {
       m.addEventListener("downloadprogress", (e) => {
-        const text = `Downloading Chrome's Russian language pack… ${Math.round(e.loaded * 100)}%`;
+        const text = `Downloading Chrome's language pack… ${Math.round(e.loaded * 100)}%`;
         setEngineStatus(text);
         mtBar.set(Math.round(e.loaded * 100), text);
       });
@@ -133,27 +186,29 @@ async function createBuiltIn() {
   return translator;
 }
 
-let builtIn = null;
-function getBuiltIn() {
-  builtIn ??= (async () => {
-    setEngineStatus("Preparing Chrome's translator…");
-    const slow = setTimeout(() => setEngineStatus(
-      "Chrome's translator is still getting ready. If this doesn't finish, switch to Claude.", true), 20000);
-    try {
-      return await createBuiltIn();
-    } finally {
-      clearTimeout(slow);
-    }
-  })().catch((err) => {
-    builtIn = null;
-    // The first download must start from a click; Start / choosing a file count as one.
-    const msg = err?.name === "NotAllowedError"
-      ? "Press Start (or choose the subtitle file again) to download Chrome's Russian language pack."
-      : err.message;
-    setEngineStatus(msg, true);
-    throw new Error(msg);
-  });
-  return builtIn;
+const builtIns = new Map(); // direction -> Promise<Translator>
+function getBuiltIn(dir = direction) {
+  if (!builtIns.has(dir)) {
+    builtIns.set(dir, (async () => {
+      setEngineStatus("Preparing Chrome's translator…");
+      const slow = setTimeout(() => setEngineStatus(
+        "Chrome's translator is still getting ready. If this doesn't finish, switch to Claude.", true), 20000);
+      try {
+        return await createBuiltIn(dir);
+      } finally {
+        clearTimeout(slow);
+      }
+    })().catch((err) => {
+      builtIns.delete(dir);
+      // The first download must start from a click; Start / choosing a file count as one.
+      const msg = err?.name === "NotAllowedError"
+        ? "Press Start (or choose the subtitle file again) to download Chrome's language pack."
+        : err.message;
+      setEngineStatus(msg, true);
+      throw new Error(msg);
+    }));
+  }
+  return builtIns.get(dir);
 }
 
 /** Call from a click handler so Chrome may download its language pack. */
@@ -178,6 +233,7 @@ async function getSpeechToken(retried = false) {
 }
 
 async function translate(lines, context = []) {
+  const dir = direction;
   if (engineSel.value === "opus") {
     const texts = lines.map((l) => l.text.trim());
     const nonEmpty = texts.filter(Boolean);
@@ -186,19 +242,19 @@ async function translate(lines, context = []) {
     return lines.map((l, i) => ({ id: l.id, text: texts[i] ? out[k++] ?? "" : "" }));
   }
   if (engineSel.value === "chrome") {
-    const translator = await getBuiltIn();
+    const translator = await getBuiltIn(dir);
     return Promise.all(lines.map(async (l) => ({ id: l.id, text: l.text.trim() ? await translator.translate(l.text) : "" })));
   }
-  return translateWithClaude(lines, context);
+  return translateWithClaude(lines, context, dir);
 }
 
-async function translateWithClaude(lines, context = [], retried = false) {
+async function translateWithClaude(lines, context, dir, retried = false) {
   const res = await fetch("/api/translate", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Access-Code": storedCode() },
-    body: JSON.stringify({ lines, context }),
+    body: JSON.stringify({ lines, context, direction: dir }),
   });
-  if (res.status === 401 && !retried && (await askForCode())) return translateWithClaude(lines, context, true);
+  if (res.status === 401 && !retried && (await askForCode())) return translateWithClaude(lines, context, dir, true);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data.translations;
@@ -262,16 +318,21 @@ for (const tab of document.querySelectorAll(".tab")) {
 (() => {
   const toggleBtn = $("liveToggle");
   const statusEl = $("liveStatus");
-  const enEl = $("liveEn");
-  const ruEl = $("liveRu");
+  // What was said (smaller) and its translation (large), each with a pronunciation line.
+  const origEl = $("liveOrig");
+  const origText = origEl.querySelector(".sub-text");
+  const origSay = origEl.querySelector(".say");
+  const transEl = $("liveTrans");
+  const transText = transEl.querySelector(".sub-text");
+  const transSay = transEl.querySelector(".say");
   const stage = $("liveStage");
 
   let listening = false;
   let fadeTimer = null;
-  const recentEnglish = [];
+  const recentLines = []; // what was said lately, as context for the translator
 
   // Each spoken phrase gets a number. While it is still being spoken we translate the
-  // partial text (rank 0, 1, 2...) so Russian appears immediately; the final text gets
+  // partial text (rank 0, 1, 2...) so the translation appears immediately; the final text gets
   // rank Infinity. Translations finish out of order, so only show something newer.
   let phrase = 0;
   let interimRank = 0;
@@ -293,16 +354,30 @@ for (const tab of document.querySelectorAll(".tab")) {
     document.body.classList.remove("show-controls");
   }
 
-  function showEnglish(finalText, interimText = "") {
-    enEl.classList.remove("faded");
-    enEl.textContent = tail(finalText);
+  function showOriginal(finalText, interimText = "") {
+    origEl.classList.remove("faded");
+    origText.textContent = tail(finalText);
     if (interimText) {
       const span = document.createElement("span");
       span.className = "interim";
       span.textContent = (finalText ? " " : "") + tail(interimText);
-      enEl.append(span);
+      origText.append(span);
     }
+    updateSay();
   }
+
+  // Pronunciation lines follow whatever is on screen.
+  function updateSay() {
+    const from = fromLang();
+    const to = toLang();
+    origText.lang = from;
+    transText.lang = to;
+    origSay.lang = SAY_LANG[from];
+    transSay.lang = SAY_LANG[to];
+    origSay.textContent = sayFor(origText.textContent, from);
+    transSay.textContent = shown.phrase >= 0 ? sayFor(transText.textContent, to) : "";
+  }
+  document.addEventListener("saychange", updateSay);
 
   // Long run-on speech would fill the screen; keep the end, which is what is being said now.
   function tail(text) {
@@ -311,18 +386,19 @@ for (const tab of document.querySelectorAll(".tab")) {
     return "…" + cut.slice(cut.indexOf(" ") + 1);
   }
 
-  function show(p, rank, ru, en) {
-    if (!ru || p < shown.phrase || (p === shown.phrase && rank <= shown.rank)) return;
+  function show(p, rank, translated, original) {
+    if (!translated || p < shown.phrase || (p === shown.phrase && rank <= shown.rank)) return;
     shown = { phrase: p, rank };
-    ruEl.textContent = tail(ru);
-    ruEl.classList.remove("faded");
-    if (rank === Infinity) showEnglish(en);
+    transText.textContent = tail(translated);
+    transEl.classList.remove("faded");
+    if (rank === Infinity) showOriginal(original);
+    else updateSay();
     // Clear the line once it has been on screen long enough, like a real subtitle.
     clearTimeout(fadeTimer);
-    const hold = Math.min(8000, Math.max(3000, ru.length * 80));
+    const hold = Math.min(8000, Math.max(3000, translated.length * 80));
     fadeTimer = setTimeout(() => {
-      ruEl.classList.add("faded");
-      enEl.classList.add("faded");
+      transEl.classList.add("faded");
+      origEl.classList.add("faded");
     }, hold);
   }
 
@@ -337,7 +413,7 @@ for (const tab of document.querySelectorAll(".tab")) {
       const job = interimNext;
       interimNext = null;
       try {
-        const [result] = await translate([{ id: "interim", text: job.text }], recentEnglish.slice(-6));
+        const [result] = await translate([{ id: "interim", text: job.text }], recentLines.slice(-6));
         if (job.p === phrase) show(job.p, job.rank, result?.text, job.text);
       } catch { /* the final translation will report errors */ }
     }
@@ -345,7 +421,7 @@ for (const tab of document.querySelectorAll(".tab")) {
   }
 
   function handleInterim(interim) {
-    showEnglish("", interim);
+    showOriginal("", interim);
     // Partial translations are free with the on-device translators. With Claude each one
     // would be a paid request, so Claude only translates finished phrases.
     if (engineSel.value !== "claude" && interim.split(/\s+/).length >= MIN_INTERIM_WORDS) {
@@ -356,15 +432,15 @@ for (const tab of document.querySelectorAll(".tab")) {
   async function addPhrase(text, { show: display = true } = {}) {
     if (!display) {
       // Already superseded on screen; keep it only as context for later translations.
-      recentEnglish.push(text);
-      if (recentEnglish.length > 20) recentEnglish.shift();
+      recentLines.push(text);
+      if (recentLines.length > 20) recentLines.shift();
       return;
     }
     const p = phrase++;
     interimNext = null;
-    const context = recentEnglish.slice(-6);
-    recentEnglish.push(text);
-    if (recentEnglish.length > 20) recentEnglish.shift();
+    const context = recentLines.slice(-6);
+    recentLines.push(text);
+    if (recentLines.length > 20) recentLines.shift();
 
     try {
       const [result] = await translate([{ id: String(p), text }], context);
@@ -418,7 +494,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     .catch((err) => ({ error: err.message }))
     .then((cfg) => {
       useCloud = Boolean(cfg.cloudSpeech);
-      $("appVersion").textContent = useCloud ? "v6 · Deepgram Nova-3" : "v6 · on-device Whisper (no Deepgram key)";
+      $("appVersion").textContent = useCloud ? "v7 · Deepgram Nova-3" : "v7 · on-device Whisper (no Deepgram key)";
       if (useCloud) {
         setStatus("Ready. Press Start.");
       } else if (cfg.error) {
@@ -556,14 +632,14 @@ for (const tab of document.querySelectorAll(".tab")) {
       await speechReady;
       if (useCloud) {
         setStatus("Connecting…");
-        await cloud.start(micStream);
+        await cloud.start(micStream, fromLang());
         if (listening) setStatus("Listening (Deepgram Nova-3)…");
         return;
       }
       setStatus("Loading the speech model…");
       await loadModel();
       if (!listening) return;
-      await local.start(micStream);
+      await local.start(micStream, fromLang());
       setStatus("Listening…");
     } catch (err) {
       setStatus(err.message, true);
@@ -596,6 +672,22 @@ for (const tab of document.querySelectorAll(".tab")) {
   });
 
   toggleBtn.addEventListener("click", () => (listening ? stop() : start()));
+
+  // Swapping languages: clear the screen and listen for the other language.
+  document.addEventListener("directionchange", async () => {
+    phrase++;
+    interimNext = null;
+    recentLines.length = 0;
+    clearTimeout(fadeTimer);
+    if (shown.phrase >= 0) {
+      origText.textContent = "";
+      transText.textContent = "";
+    }
+    updateSay();
+    if (!listening) return;
+    stop();
+    await start();
+  });
   // Stop phones and laptops dimming or locking the screen mid-film.
   let wakeLock = null;
   async function keepAwake() {
@@ -609,7 +701,7 @@ for (const tab of document.querySelectorAll(".tab")) {
   });
 
   const sizeSel = $("liveSize");
-  const applySize = () => stage.style.setProperty("--ru-scale", sizeSel.value);
+  const applySize = () => stage.style.setProperty("--sub-scale", sizeSel.value);
   try { sizeSel.value = localStorage.getItem("liveSize") || "1"; } catch { /* storage blocked */ }
   if (!sizeSel.value) sizeSel.value = "1";
   applySize();
@@ -617,7 +709,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     try { localStorage.setItem("liveSize", sizeSel.value); } catch { /* storage blocked */ }
     applySize();
   });
-  $("liveShowEn").addEventListener("change", (e) => stage.classList.toggle("hide-en", !e.target.checked));
+  $("liveShowOrig").addEventListener("change", (e) => stage.classList.toggle("hide-orig", !e.target.checked));
   // Full screen (cinema mode): only the subtitles stay on screen. Where the browser allows it
   // (Android, computers) the page also enters real full screen; iPhone Safari doesn't allow
   // that for web pages, so there the app hides its own controls and suggests Add to Home Screen.
@@ -712,19 +804,19 @@ for (const tab of document.querySelectorAll(".tab")) {
   }
 
   function updateProgress() {
-    const done = cues.filter((c) => c.ru !== undefined).length;
+    const done = cues.filter((c) => c.tr !== undefined).length;
     progressEl.max = cues.length || 1;
     progressEl.value = done;
-    const failed = cues.filter((c) => c.ru === undefined && c.attempts >= MAX_ATTEMPTS).length;
+    const failed = cues.filter((c) => c.tr === undefined && c.attempts >= MAX_ATTEMPTS).length;
     if (!cues.length) setStatus("No subtitles loaded");
     else if (done === cues.length) setStatus(`All ${cues.length} subtitles translated`);
     else if (failed && !inFlight) setStatus(`${done}/${cues.length} translated, ${failed} failed: ${lastError}`, true);
     else setStatus(`Translating… ${done}/${cues.length}`);
     downloadBtn.disabled = done === 0;
-    downloadBtn.textContent = done === cues.length ? "Download Russian .srt" : "Download partial .srt";
+    $("downloadLabel").textContent = done === cues.length || !cues.length ? `Download ${NAMES[toLang()]} .srt` : "Download partial .srt";
   }
 
-  const needsWork = (c) => c.ru === undefined && !c.pending && c.attempts < MAX_ATTEMPTS && Date.now() >= c.retryAt;
+  const needsWork = (c) => c.tr === undefined && !c.pending && c.attempts < MAX_ATTEMPTS && Date.now() >= c.retryAt;
 
   // Translate outward from the playhead: first what is on screen now and just
   // ahead, then the rest of the file after it, then anything before it.
@@ -739,7 +831,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     const order = [...cues.slice(from), ...cues.slice(0, from)];
     const firstIdx = order.findIndex(needsWork);
     if (firstIdx === -1) return null;
-    const size = cues.some((c) => c.ru !== undefined) ? BATCH : FIRST_BATCH;
+    const size = cues.some((c) => c.tr !== undefined) ? BATCH : FIRST_BATCH;
     const batch = [];
     // Keep batches contiguous so each one reads like a scene.
     for (let i = firstIdx; i < order.length && batch.length < size; i++) {
@@ -756,7 +848,7 @@ for (const tab of document.querySelectorAll(".tab")) {
       runBatch(batch);
     }
     // Retry backed-off cues later.
-    if (!inFlight && cues.some((c) => c.ru === undefined && c.attempts < MAX_ATTEMPTS)) setTimeout(pump, 1000);
+    if (!inFlight && cues.some((c) => c.tr === undefined && c.attempts < MAX_ATTEMPTS)) setTimeout(pump, 1000);
   }
 
   async function runBatch(batch) {
@@ -770,7 +862,7 @@ for (const tab of document.querySelectorAll(".tab")) {
       if (gen !== generation) return;
       const byId = new Map(results.map((r) => [r.id, r.text]));
       for (const c of batch) {
-        if (byId.has(c.id)) c.ru = byId.get(c.id);
+        if (byId.has(c.id)) c.tr = byId.get(c.id);
         else c.attempts++;
       }
     } catch (err) {
@@ -795,7 +887,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     const idx = findCueAt(cues, video.currentTime);
     const cue = cues[idx];
     const mode = modeSel.value;
-    const key = `${idx}|${mode}|${cue?.ru !== undefined}`;
+    const key = `${idx}|${mode}|${cue?.tr !== undefined}|${direction}`;
     if (key !== renderedKey) {
       renderedKey = key;
       overlay.replaceChildren();
@@ -807,13 +899,24 @@ for (const tab of document.querySelectorAll(".tab")) {
           span.textContent = text;
           div.append(span);
           overlay.append(div);
+          return span;
         };
+        const addSay = (text, lang) => {
+          const say = sayFor(text, lang);
+          if (say) addLine(say, "say").lang = SAY_LANG[lang];
+        };
+        // The mode values predate the language swap: "ru" = translation only, "en" = original only.
         if (mode !== "en") {
-          if (cue.ru !== undefined) addLine(cue.ru, "ru");
-          else if (cue.attempts >= MAX_ATTEMPTS) addLine(cue.text, "ru");
-          else addLine("перевод…", "wait");
+          if (cue.tr !== undefined) {
+            addLine(cue.tr, "ru").lang = toLang();
+            addSay(cue.tr, toLang());
+          } else if (cue.attempts >= MAX_ATTEMPTS) addLine(cue.text, "ru");
+          else addLine(toLang() === "ru" ? "перевод…" : "translating…", "wait");
         }
-        if (mode !== "ru") addLine(cue.text, "en");
+        if (mode !== "ru") {
+          addLine(cue.text, "en").lang = fromLang();
+          addSay(cue.text, fromLang());
+        }
       }
     }
     requestAnimationFrame(render);
@@ -832,18 +935,25 @@ for (const tab of document.querySelectorAll(".tab")) {
     if (!file) return;
     prepareEngine();
     const parsed = parseSubtitles(await file.text());
+    fileName = file.name.replace(/\.(srt|vtt)$/i, "").replace(/[._-](en|eng|english|ru|rus|russian)$/i, "");
+    startTranslating(parsed);
+    if (!cues.length) setStatus("No subtitles found in that file", true);
+  });
+
+  // (Re)translate every cue from scratch, e.g. after the languages are swapped.
+  function startTranslating(parsed) {
     generation++;
     inFlight = 0;
     renderedKey = "";
-    fileName = file.name.replace(/\.(srt|vtt)$/i, "").replace(/[._-](en|eng|english)$/i, "");
-    cues = parsed.map((c) => ({ ...c, ru: undefined, pending: false, attempts: 0, retryAt: 0 }));
-    if (!cues.length) {
-      setStatus("No subtitles found in that file", true);
-      return;
-    }
+    cues = parsed.map((c) => ({ ...c, tr: undefined, pending: false, attempts: 0, retryAt: 0 }));
     updateProgress();
     pump();
+  }
+  document.addEventListener("directionchange", () => {
+    if (cues.length) startTranslating(cues.map(({ id, start, end, text }) => ({ id, start, end, text })));
+    else updateProgress();
   });
+  document.addEventListener("saychange", () => (renderedKey = ""));
 
   // Seeking changes which cues are most urgent; pump() reads currentTime each time.
   video.addEventListener("seeked", pump);
@@ -851,9 +961,9 @@ for (const tab of document.querySelectorAll(".tab")) {
   $("playerFullscreen").addEventListener("click", () => toggleFullscreen($("player")));
 
   downloadBtn.addEventListener("click", () => {
-    const srt = toSrt(cues, (c) => c.ru ?? c.text);
+    const srt = toSrt(cues, (c) => c.tr ?? c.text);
     const url = URL.createObjectURL(new Blob([srt], { type: "application/x-subrip;charset=utf-8" }));
-    const a = Object.assign(document.createElement("a"), { href: url, download: `${fileName}.ru.srt` });
+    const a = Object.assign(document.createElement("a"), { href: url, download: `${fileName}.${toLang()}.srt` });
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });

@@ -1,9 +1,9 @@
-// English → Russian translation with an open model (Opus-MT) running in the browser.
+// English ⇄ Russian translation with open models (Opus-MT) running in the browser.
 // Free, no key, and works where Chrome's built-in translator doesn't (phones, Safari, Firefox).
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js";
-const REPOS = ["Xenova/opus-mt-en-ru"];
+const REPOS = { "en-ru": "Xenova/opus-mt-en-ru", "ru-en": "Xenova/opus-mt-ru-en" };
 
-let translator = null;
+const translators = new Map(); // direction -> pipeline
 let queue = Promise.resolve();
 
 self.onmessage = ({ data }) => {
@@ -22,10 +22,12 @@ async function isSaved(repo) {
   }
 }
 
-async function load() {
-  if (translator) return;
+async function load(direction) {
+  if (translators.has(direction)) return translators.get(direction);
+  const repo = REPOS[direction];
+  if (!repo) throw new Error(`No translation model for ${direction}`);
   const { pipeline } = await import(TRANSFORMERS_URL);
-  let saved = false;
+  const saved = await isSaved(repo);
   const files = new Map();
   const progress_callback = (p) => {
     if (p.status !== "progress" || !p.total) return;
@@ -39,29 +41,27 @@ async function load() {
     self.postMessage({ type: "progress", loaded, total, saved });
   };
   let lastError;
-  for (const repo of REPOS) {
-    saved = await isSaved(repo);
-    for (const dtype of ["q8", "fp32"]) {
-      try {
-        translator = await pipeline("translation", repo, { dtype, progress_callback });
-        return;
-      } catch (err) {
-        lastError = err;
-        console.warn(`Could not load ${repo} (${dtype}):`, err);
-      }
+  for (const dtype of ["q8", "fp32"]) {
+    try {
+      const translator = await pipeline("translation", repo, { dtype, progress_callback });
+      translators.set(direction, translator);
+      return translator;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Could not load ${repo} (${dtype}):`, err);
     }
   }
   throw new Error(`Couldn't load the translation model: ${lastError?.message || lastError}`);
 }
 
-async function handle({ type, id, texts }) {
+async function handle({ type, id, texts, direction = "en-ru" }) {
   if (type === "load") {
-    await load();
+    await load(direction);
     self.postMessage({ type: "result", id, texts: [] });
     return;
   }
   if (type !== "translate") return;
-  await load();
+  const translator = await load(direction);
   const out = await translator(texts, { max_new_tokens: 256 });
   self.postMessage({ type: "result", id, texts: out.map((o) => o.translation_text) });
 }

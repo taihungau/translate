@@ -22,8 +22,9 @@ const MAX_FINAL_MS = 25000; // Whisper's window is 30 s
 const FIRST_LIVE_MS = 1000; // start showing live text after this much of a stretch
 const SILENT_RMS = 0.002; // below this nothing is audible at all
 
-// Whisper invents text for music, applause and silence.
-const JUNK = /^(thank you\.?|thanks for watching!?|you\.?|bye\.?|\.+|-+|so\.?)$/i;
+// Whisper invents text for music, applause and silence (in Russian, credits from the
+// subtitled videos it learnt from).
+const JUNK = /^(thank you\.?|thanks for watching!?|you\.?|bye\.?|\.+|-+|so\.?|продолжение следует\.*|спасибо за просмотр!?\.?|субтитры (?:сделал|создавал|делал|подготовил).*|редактор субтитров.*)$/i;
 
 export function cleanTranscript(text) {
   const cleaned = text
@@ -67,6 +68,7 @@ export class LocalRecognizer {
     this.cutTimes = new Map(); // stretch -> when it ended
     this.pendingFinal = []; // finished audio waiting for Whisper to be free
     this.pendingChunk = -1;
+    this.language = "english";
   }
 
   /** Download (first time only) and load the model. Resolves with "webgpu". */
@@ -149,7 +151,9 @@ export class LocalRecognizer {
     if (caption) this.h.onInterim(caption);
   }
 
-  async start(stream) {
+  /** @param {"en" | "ru"} language the language being spoken */
+  async start(stream, language = "en") {
+    this.language = language === "ru" ? "russian" : "english";
     this.ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
     await this.ctx.resume().catch(() => {});
     const url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
@@ -260,6 +264,6 @@ export class LocalRecognizer {
     const audio = new Float32Array(frames.length * FRAME);
     frames.forEach((f, k) => audio.set(f, k * FRAME));
     this.busy++;
-    this.worker.postMessage({ type: "transcribe", id: this.nextId++, audio, final, chunk }, [audio.buffer]);
+    this.worker.postMessage({ type: "transcribe", id: this.nextId++, audio, final, chunk, language: this.language }, [audio.buffer]);
   }
 }

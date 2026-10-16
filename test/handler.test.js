@@ -19,6 +19,7 @@ test("rejects non-POST and malformed bodies", async () => {
   assert.equal((await call("POST", undefined)).status, 400);
   assert.equal((await call("POST", { lines: [] })).status, 400);
   assert.equal((await call("POST", { lines: [{ id: 1, text: "x" }] })).status, 400);
+  assert.equal((await call("POST", { lines: [{ id: "1", text: "x" }], direction: "en-de" })).status, 400);
 });
 
 test("enforces ACCESS_CODE when set", async () => {
