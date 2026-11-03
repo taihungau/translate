@@ -303,10 +303,30 @@ async function keepModelsSaved() {
   }
 }
 
+// ---------------------------------------------------------------- appearance
+// Automatic follows the phone's light/dark setting. Full-screen (cinema) mode is always dark.
+const themeSel = $("theme");
+const darkQuery = matchMedia("(prefers-color-scheme: dark)");
+function applyTheme() {
+  const choice = themeSel.value;
+  if (choice) document.documentElement.dataset.theme = choice;
+  else delete document.documentElement.dataset.theme;
+  const dark = document.body.classList.contains("immersive") || (choice ? choice === "dark" : darkQuery.matches);
+  document.querySelector('meta[name="theme-color"]').content = dark ? "#000000" : "#ffffff";
+}
+try { themeSel.value = localStorage.getItem("theme") || ""; } catch { /* storage blocked */ }
+applyTheme();
+themeSel.addEventListener("change", () => {
+  try { localStorage.setItem("theme", themeSel.value); } catch { /* storage blocked */ }
+  applyTheme();
+});
+darkQuery.addEventListener("change", applyTheme);
+new MutationObserver(applyTheme).observe(document.body, { attributeFilter: ["class"] });
+
 // ---------------------------------------------------------------- tabs
-for (const tab of document.querySelectorAll(".tab")) {
+for (const tab of document.querySelectorAll(".tab[data-panel]")) {
   tab.addEventListener("click", () => {
-    for (const t of document.querySelectorAll(".tab")) {
+    for (const t of document.querySelectorAll(".tab[data-panel]")) {
       t.classList.toggle("active", t === tab);
       t.setAttribute("aria-selected", String(t === tab));
     }
@@ -429,6 +449,18 @@ for (const tab of document.querySelectorAll(".tab")) {
     }
   }
 
+  // Finished phrases are kept on this device for the course's "Из фильмов" (from films) review.
+  function rememberPhrase(original, translated) {
+    if (!translated) return;
+    const [en, ru] = fromLang() === "en" ? [original, translated] : [translated, original];
+    if (en.trim().split(/\s+/).length < 2 || en.length > 140) return;
+    try {
+      const list = JSON.parse(localStorage.getItem("heardPhrases") || "[]").filter((h) => h.en !== en);
+      list.push({ en, ru, at: Date.now() });
+      localStorage.setItem("heardPhrases", JSON.stringify(list.slice(-200)));
+    } catch { /* storage full or blocked */ }
+  }
+
   async function addPhrase(text, { show: display = true } = {}) {
     if (!display) {
       // Already superseded on screen; keep it only as context for later translations.
@@ -445,6 +477,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     try {
       const [result] = await translate([{ id: String(p), text }], context);
       show(p, Infinity, result?.text, text);
+      rememberPhrase(text, result?.text);
       if (listening) setStatus("Listening…");
     } catch (err) {
       setStatus(err.message, true);
@@ -494,7 +527,7 @@ for (const tab of document.querySelectorAll(".tab")) {
     .catch((err) => ({ error: err.message }))
     .then((cfg) => {
       useCloud = Boolean(cfg.cloudSpeech);
-      $("appVersion").textContent = useCloud ? "v7 · Deepgram Nova-3" : "v7 · on-device Whisper (no Deepgram key)";
+      $("appVersion").textContent = useCloud ? "v8 · Deepgram Nova-3" : "v8 · on-device Whisper (no Deepgram key)";
       if (useCloud) {
         setStatus("Ready. Press Start.");
       } else if (cfg.error) {

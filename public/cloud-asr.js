@@ -47,10 +47,18 @@ export class CloudRecognizer {
     this.filled = 0;
     this.failures = [];
     this.language = "en";
+    // Each start/stop begins a new session. A connection from an earlier session (e.g. the old
+    // language after a swap) closing late must not be mistaken for a dropped one and reopened.
+    this.session = 0;
+  }
+
+  live(session) {
+    return this.active && this.session === session;
   }
 
   async start(stream, language = "en") {
     this.active = true;
+    const session = ++this.session;
     this.language = language;
     this.ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
     await this.ctx.resume().catch(() => {});
@@ -61,6 +69,7 @@ export class CloudRecognizer {
     this.ctx.createMediaStreamSource(stream).connect(node);
     node.port.onmessage = ({ data }) => this.onAudio(data);
     await this.connect();
+    if (!this.live(session)) return; // stopped while connecting
     // Deepgram closes idle connections; keep it open through silent scenes.
     this.keepAlive = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: "KeepAlive" }));
@@ -68,15 +77,17 @@ export class CloudRecognizer {
   }
 
   async connect() {
+    const session = this.session;
     const token = await this.getToken();
-    if (!this.active) return;
+    if (!this.live(session)) return;
     await new Promise((resolve, reject) => {
       const ws = new WebSocket(deepgramUrl(this.language), ["bearer", token]);
       ws.binaryType = "arraybuffer";
       let opened = false;
       ws.onopen = () => {
         opened = true;
-        this.ws = ws;
+        if (this.live(session)) this.ws = ws;
+        else ws.close(); // stopped while it was opening
         resolve();
       };
       ws.onmessage = ({ data }) => {
@@ -90,13 +101,13 @@ export class CloudRecognizer {
           return;
         }
         if (this.ws === ws) this.ws = null;
-        if (this.active) this.reconnect();
+        if (this.live(session)) this.reconnect(session);
       };
     });
   }
 
   // Connections drop on flaky mobile networks; reconnect, but give up if it keeps failing.
-  async reconnect() {
+  async reconnect(session) {
     const now = Date.now();
     this.failures = this.failures.filter((t) => now - t < 30000);
     this.failures.push(now);
@@ -107,11 +118,12 @@ export class CloudRecognizer {
     }
     this.h.onStatus("Reconnecting…");
     await new Promise((r) => setTimeout(r, 500 * this.failures.length));
+    if (!this.live(session)) return;
     try {
       await this.connect();
       this.h.onStatus("Listening…");
     } catch (err) {
-      if (this.active) this.reconnect();
+      if (this.live(session)) this.reconnect(session);
     }
   }
 
@@ -151,6 +163,7 @@ export class CloudRecognizer {
 
   stop() {
     this.active = false;
+    this.session++;
     clearInterval(this.keepAlive);
     try {
       this.ws?.send(JSON.stringify({ type: "CloseStream" }));

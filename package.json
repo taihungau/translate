@@ -1,7 +1,7 @@
 {
   "name": "subtitle-translator",
   "version": "1.0.0",
-  "description": "Realtime English \u21c4 Russian movie subtitle translation powered by Claude",
+  "description": "Realtime English ⇄ Russian movie subtitle translation powered by Claude",
   "type": "module",
   "scripts": {
     "start": "node local/server.js",
@@ -13,5 +13,8 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0"
+  },
+  "devDependencies": {
+    "cmu-pronouncing-dictionary": "3.0.0"
   }
 }

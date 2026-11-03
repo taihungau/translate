@@ -33,6 +33,29 @@ aloud:
 
 Both can be turned off in Settings → Pronunciation.
 
+## English course (Learn)
+
+`learn.html` (the book tab, or "Курс английского" on the start screen) is an English course for a
+Russian speaker, explained in Russian:
+
+- **12 units in three levels** (A1 → A2 → B1), in order: meeting people, being polite, numbers and
+  time, café, shopping, directions, travel, the movies, getting help, small talk, opinions, plans.
+- Each unit has a goal, a short grammar note aimed at typical mistakes Russian speakers make, and
+  7–9 everyday phrases with the Russian meaning and the English **written in Russian letters**
+  (the same spelling as under live subtitles; `test/learn.test.js` keeps them in sync).
+- **Practice cards** in two modes: *Понимать* (English → Russian) and *Говорить* (Russian → English).
+  Every phrase and word can be played aloud at normal or slow speed (the device's English voice).
+- **Speaking check:** she says the phrase, Deepgram writes down what it heard, and the missed words
+  are marked in red with a score.
+- **Spaced repetition:** a known phrase comes back after 1, 3, 7, 14 and 30 days; a forgotten one
+  comes back in a few cards. **"Из фильмов"** reviews phrases heard in live subtitles.
+- Progress stays on the device (browser storage).
+
+## Appearance
+
+Settings → Appearance: Automatic (follows the phone), Light or Dark. Full-screen (cinema) mode is
+always dark so the screen doesn't light up the room. The course uses the same setting.
+
 ## Translation engines
 
 Pick the engine at the top of the page:

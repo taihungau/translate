@@ -1,19 +1,37 @@
-/* Subtitles: a dark, quiet interface for watching films in a cinema. Nothing glows except the
-   subtitles; controls sit on frosted glass and fade away while listening. */
+/* Subtitles: a quiet interface for watching films and talking to people. Nothing stands out
+   except the subtitles; controls sit on frosted glass and fade away while listening.
+   Dark by default, white when the phone is in light mode or Settings → Appearance says so.
+   Full-screen (cinema) mode is always dark. */
 :root {
   --bg: #000;
   --surface: rgba(28, 28, 30, 0.72); /* frosted glass */
   --surface-solid: #1c1c1e;
   --surface-2: #2c2c2e;
+  --group: #2c2c2e;
   --separator: rgba(84, 84, 88, 0.55);
   --text: #f5f5f7;
   --text-2: rgba(235, 235, 245, 0.62);
   --text-3: rgba(235, 235, 245, 0.32);
+  --sub: #fff;
   --accent: #0a84ff;
   --red: #ff453a;
   --green: #30d158;
   --orange: #ff9f0a;
   --gray: #8e8e93;
+  --fill: rgba(118, 118, 128, 0.24);
+  --fill-press: rgba(118, 118, 128, 0.4);
+  --tab-active: #636366;
+  --tab-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+  --mark-a: #3a3a3c;
+  --mark-b: #1c1c1e;
+  --mark-edge: rgba(255, 255, 255, 0.12);
+  --record-bg: #fff;
+  --record-fg: #000;
+  --record-ring: rgba(255, 255, 255, 0.16);
+  --shadow: rgba(0, 0, 0, 0.5);
+  --glass: rgba(44, 44, 46, 0.9);
+  --grabber: #48484a;
+  --switch-off: rgba(120, 120, 128, 0.32);
   --radius-l: 22px;
   --radius-m: 14px;
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -22,6 +40,105 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #fff;
+    --surface: rgba(255, 255, 255, 0.8);
+    --surface-solid: #f2f2f7;
+    --surface-2: #e5e5ea;
+    --group: #fff;
+    --separator: rgba(60, 60, 67, 0.18);
+    --text: #1c1c1e;
+    --text-2: rgba(60, 60, 67, 0.72);
+    --text-3: rgba(60, 60, 67, 0.42);
+    --sub: #111114;
+    --accent: #0062d1;
+    --red: #e0352b;
+    --green: #2a9d48;
+    --orange: #e08600;
+    --gray: #8e8e93;
+    --fill: rgba(118, 118, 128, 0.12);
+    --fill-press: rgba(118, 118, 128, 0.22);
+    --tab-active: #fff;
+    --tab-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+    --mark-a: #fff;
+    --mark-b: #ececf1;
+    --mark-edge: rgba(0, 0, 0, 0.08);
+    --record-bg: #1c1c1e;
+    --record-fg: #fff;
+    --record-ring: rgba(0, 0, 0, 0.06);
+    --shadow: rgba(0, 0, 0, 0.12);
+    --glass: rgba(255, 255, 255, 0.92);
+    --grabber: #c7c7cc;
+    --switch-off: rgba(120, 120, 128, 0.16);
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #fff;
+  --surface: rgba(255, 255, 255, 0.8);
+  --surface-solid: #f2f2f7;
+  --surface-2: #e5e5ea;
+  --group: #fff;
+  --separator: rgba(60, 60, 67, 0.18);
+  --text: #1c1c1e;
+  --text-2: rgba(60, 60, 67, 0.72);
+  --text-3: rgba(60, 60, 67, 0.42);
+  --sub: #111114;
+  --accent: #0062d1;
+  --red: #e0352b;
+  --green: #2a9d48;
+  --orange: #e08600;
+  --gray: #8e8e93;
+  --fill: rgba(118, 118, 128, 0.12);
+  --fill-press: rgba(118, 118, 128, 0.22);
+  --tab-active: #fff;
+  --tab-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  --mark-a: #fff;
+  --mark-b: #ececf1;
+  --mark-edge: rgba(0, 0, 0, 0.08);
+  --record-bg: #1c1c1e;
+  --record-fg: #fff;
+  --record-ring: rgba(0, 0, 0, 0.06);
+  --shadow: rgba(0, 0, 0, 0.12);
+  --glass: rgba(255, 255, 255, 0.92);
+  --grabber: #c7c7cc;
+  --switch-off: rgba(120, 120, 128, 0.16);
+  color-scheme: light;
+}
+/* The cinema stays dark whatever the theme: a white screen would light up the room. */
+body.immersive {
+  --bg: #000;
+  --surface: rgba(28, 28, 30, 0.72); /* frosted glass */
+  --surface-solid: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --group: #2c2c2e;
+  --separator: rgba(84, 84, 88, 0.55);
+  --text: #f5f5f7;
+  --text-2: rgba(235, 235, 245, 0.62);
+  --text-3: rgba(235, 235, 245, 0.32);
+  --sub: #fff;
+  --accent: #0a84ff;
+  --red: #ff453a;
+  --green: #30d158;
+  --orange: #ff9f0a;
+  --gray: #8e8e93;
+  --fill: rgba(118, 118, 128, 0.24);
+  --fill-press: rgba(118, 118, 128, 0.4);
+  --tab-active: #636366;
+  --tab-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+  --mark-a: #3a3a3c;
+  --mark-b: #1c1c1e;
+  --mark-edge: rgba(255, 255, 255, 0.12);
+  --record-bg: #fff;
+  --record-fg: #000;
+  --record-ring: rgba(255, 255, 255, 0.16);
+  --shadow: rgba(0, 0, 0, 0.5);
+  --glass: rgba(44, 44, 46, 0.9);
+  --grabber: #48484a;
+  --switch-off: rgba(120, 120, 128, 0.32);
   color-scheme: dark;
 }
 
@@ -55,8 +172,8 @@ button { cursor: pointer; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
 .brand-mark {
   width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
-  background: linear-gradient(160deg, #3a3a3c, #1c1c1e); color: var(--text);
-  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.12);
+  background: linear-gradient(160deg, var(--mark-a), var(--mark-b)); color: var(--text);
+  box-shadow: inset 0 0 0 .5px var(--mark-edge);
 }
 .brand-mark svg { width: 20px; height: 20px; }
 .brand-text { display: flex; flex-direction: column; min-width: 0; }
@@ -65,7 +182,7 @@ button { cursor: pointer; }
 
 /* iOS-style segmented control */
 .segmented {
-  display: inline-flex; padding: 2px; border-radius: 10px; background: rgba(118,118,128,.24);
+  display: inline-flex; padding: 2px; border-radius: 10px; background: var(--fill);
 }
 .segmented .tab {
   display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent;
@@ -73,22 +190,23 @@ button { cursor: pointer; }
   min-height: 32px; transition: background .25s var(--ease), color .25s var(--ease);
 }
 .segmented .tab svg { width: 16px; height: 16px; }
-.segmented .tab.active { background: #636366; color: var(--text); box-shadow: 0 3px 8px rgba(0,0,0,.3); }
+.segmented .tab.active { background: var(--tab-active); color: var(--text); box-shadow: var(--tab-shadow); }
+a.tab { text-decoration: none; }
 
 .topbar-actions { display: flex; gap: 8px; }
 .dir-btn {
   height: 40px; border-radius: 20px; border: 0; padding: 0 14px; display: inline-flex; align-items: center; gap: 6px;
-  background: rgba(118,118,128,.24); color: var(--text); font-size: 14px; font-weight: 600; letter-spacing: .02em;
+  background: var(--fill); color: var(--text); font-size: 14px; font-weight: 600; letter-spacing: .02em;
   transition: transform .15s var(--ease), background .2s;
 }
 .dir-btn svg { width: 18px; height: 18px; color: var(--text-2); }
-.dir-btn:active { transform: scale(.95); background: rgba(118,118,128,.4); }
+.dir-btn:active { transform: scale(.95); background: var(--fill-press); }
 .icon-btn {
   width: 40px; height: 40px; border-radius: 50%; border: 0; display: grid; place-items: center;
-  background: rgba(118,118,128,.24); color: var(--text);
+  background: var(--fill); color: var(--text);
   transition: transform .15s var(--ease), background .2s;
 }
-.icon-btn:active { transform: scale(.92); background: rgba(118,118,128,.4); }
+.icon-btn:active { transform: scale(.92); background: var(--fill-press); }
 
 /* ---------- live mode ---------- */
 .live { flex-direction: column; position: relative; }
@@ -105,7 +223,7 @@ button { cursor: pointer; }
 }
 .sub-orig .interim { color: var(--text-3); }
 .sub-trans {
-  color: #fff; font-weight: 700; letter-spacing: -.02em; max-width: 22ch;
+  color: var(--sub); font-weight: 700; letter-spacing: -.02em; max-width: 22ch;
   font-size: calc(clamp(26px, min(7.2vw, 8.5vh), 84px) * var(--sub-scale)); line-height: 1.12;
   text-wrap: balance; transition: opacity .45s var(--ease);
 }
@@ -123,13 +241,11 @@ button { cursor: pointer; }
   background: var(--surface-2); color: var(--text-2); margin-bottom: 6px;
 }
 .placeholder-icon svg { width: 30px; height: 30px; }
-.mascot {
-  width: min(118px, 30vw); height: auto; margin-bottom: 6px;
-  transform: rotate(-4deg); filter: drop-shadow(0 8px 18px rgba(0,0,0,.6));
-  transition: filter .4s var(--ease);
+.placeholder-link {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; min-height: 44px; padding: 0 18px;
+  border-radius: 22px; background: var(--fill); color: var(--accent); font-size: 15px; font-weight: 600; text-decoration: none;
 }
-body.listening .mascot { animation: wobble 2.4s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(255,45,45,.55)); }
-@keyframes wobble { 0%, 100% { transform: rotate(-4deg) scale(1); } 50% { transform: rotate(3deg) scale(1.04); } }
+.placeholder-link svg { width: 18px; height: 18px; }
 .placeholder-title { font-size: 22px; font-weight: 600; letter-spacing: -.01em; color: var(--text); }
 .placeholder-text { font-size: 15px; font-weight: 400; color: var(--text-2); line-height: 1.4; letter-spacing: 0; }
 
@@ -151,14 +267,14 @@ body.listening .mascot { animation: wobble 2.4s ease-in-out infinite; filter: dr
 
 .record {
   width: 76px; height: 76px; border-radius: 50%; border: 0; display: grid; place-items: center;
-  background: #fff; color: #000; position: relative;
-  box-shadow: 0 0 0 4px rgba(255,255,255,.16), 0 10px 30px rgba(0,0,0,.5);
+  background: var(--record-bg); color: var(--record-fg); position: relative;
+  box-shadow: 0 0 0 4px var(--record-ring), 0 10px 30px var(--shadow);
   transition: transform .2s var(--ease), background .3s var(--ease), color .3s var(--ease);
 }
 .record svg { width: 32px; height: 32px; stroke-width: 2; }
 .record:active { transform: scale(.93); }
 .record .when-listening { display: none; }
-.record.listening { background: var(--red); color: #fff; box-shadow: 0 0 0 4px rgba(255,69,58,.25), 0 10px 30px rgba(0,0,0,.5); }
+.record.listening { background: var(--red); color: #fff; box-shadow: 0 0 0 4px rgba(255,69,58,.25), 0 10px 30px var(--shadow); }
 .record.listening .when-idle { display: none; }
 .record.listening .when-listening { display: block; }
 .record.listening::after {
@@ -170,7 +286,7 @@ body.listening .mascot { animation: wobble 2.4s ease-in-out infinite; filter: dr
 .record-label { font-size: 13px; font-weight: 600; color: var(--text-2); }
 .cinema-btn {
   justify-self: start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; white-space: nowrap;
-  border: 0; border-radius: 22px; background: rgba(118,118,128,.24); color: var(--text); font-size: 14px; font-weight: 500;
+  border: 0; border-radius: 22px; background: var(--fill); color: var(--text); font-size: 14px; font-weight: 500;
   transition: transform .15s var(--ease);
 }
 .cinema-btn svg { width: 18px; height: 18px; }
@@ -185,7 +301,7 @@ body.immersive.show-controls .tap-hint { opacity: 0; }
 .exit-cinema {
   position: fixed; z-index: 20; top: calc(14px + var(--safe-t)); left: 50%; transform: translate(-50%, -8px);
   display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 16px; border: 0; border-radius: 20px;
-  background: rgba(44,44,46,.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   color: var(--text); font-size: 14px; font-weight: 500; opacity: 0; pointer-events: none;
   transition: opacity .3s var(--ease), transform .3s var(--ease);
 }
@@ -194,8 +310,8 @@ body.immersive.show-controls .exit-cinema { opacity: 1; pointer-events: auto; tr
 .toast {
   position: fixed; z-index: 30; left: 50%; bottom: calc(24px + var(--safe-b)); transform: translateX(-50%);
   width: min(92vw, 420px); padding: 12px 16px; border-radius: 16px; text-align: center;
-  background: rgba(44,44,46,.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  font-size: 14px; color: var(--text); box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  font-size: 14px; color: var(--text); box-shadow: 0 10px 30px var(--shadow);
 }
 
 /* A first-time download must stay visible, even while listening or in full screen. */
@@ -233,6 +349,10 @@ body.listening .dock .status:empty { display: none; }
   .sub-trans { max-width: 34ch; }
   .sub-orig { max-width: 44ch; }
 }
+@media (max-width: 440px) {
+  /* Phones: tabs show their icons only, so Live, Video and Learn fit beside the buttons. */
+  .segmented .tab span { display: none; }
+}
 @media (max-width: 420px) {
   .brand { display: none; }
   .topbar { justify-content: space-between; }
@@ -245,17 +365,17 @@ body.listening .dock .status:empty { display: none; }
 .sheet {
   width: min(560px, 100%); max-height: min(88dvh, 760px); margin: auto auto 0; padding: 8px 16px calc(20px + var(--safe-b));
   border: 0; border-radius: 22px 22px 0 0; background: var(--surface-solid); color: var(--text);
-  overflow-y: auto; box-shadow: 0 -10px 40px rgba(0,0,0,.6);
+  overflow-y: auto; box-shadow: 0 -10px 40px var(--shadow);
 }
 @media (min-width: 700px) { .sheet { margin: auto; border-radius: var(--radius-l); } }
 .sheet::backdrop { background: rgba(0,0,0,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .sheet[open] { animation: sheet-in .35s var(--ease); }
 @keyframes sheet-in { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
-.sheet-grabber { width: 36px; height: 5px; border-radius: 3px; background: #48484a; margin: 4px auto 6px; }
+.sheet-grabber { width: 36px; height: 5px; border-radius: 3px; background: var(--grabber); margin: 4px auto 6px; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 8px; }
 .sheet-head h2 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
 .group-title { margin: 18px 16px 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
-.group { background: var(--surface-2); border-radius: var(--radius-m); overflow: hidden; }
+.group { background: var(--group); border-radius: var(--radius-m); overflow: hidden; }
 .row {
   display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px 12px 6px 14px; position: relative;
 }
@@ -285,7 +405,7 @@ body.listening .dock .status:empty { display: none; }
 /* iOS-style switch */
 .switch {
   appearance: none; -webkit-appearance: none; width: 51px; height: 31px; border-radius: 16px; margin: 0;
-  background: rgba(120,120,128,.32); position: relative; cursor: pointer; transition: background .25s var(--ease);
+  background: var(--switch-off); position: relative; cursor: pointer; transition: background .25s var(--ease);
 }
 .switch::after {
   content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
