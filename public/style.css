@@ -1,7 +1,7 @@
 /* Subtitles: a quiet interface for watching films and talking to people. Nothing stands out
    except the subtitles; controls sit on frosted glass and fade away while listening.
    Dark by default, white when the phone is in light mode or Settings → Appearance says so.
-   Full-screen (cinema) mode is always dark. */
+   Full-screen (cinema) mode is always dark. Colours are Apple's system colours in both themes. */
 :root {
   --bg: #000;
   --surface: rgba(28, 28, 30, 0.72); /* frosted glass */
@@ -10,8 +10,8 @@
   --group: #2c2c2e;
   --separator: rgba(84, 84, 88, 0.55);
   --text: #f5f5f7;
-  --text-2: rgba(235, 235, 245, 0.62);
-  --text-3: rgba(235, 235, 245, 0.32);
+  --text-2: rgba(235, 235, 245, 0.6);
+  --text-3: rgba(235, 235, 245, 0.3);
   --sub: #fff;
   --accent: #0a84ff;
   --red: #ff453a;
@@ -49,15 +49,15 @@
     --surface-solid: #f2f2f7;
     --surface-2: #e5e5ea;
     --group: #fff;
-    --separator: rgba(60, 60, 67, 0.18);
-    --text: #1c1c1e;
-    --text-2: rgba(60, 60, 67, 0.72);
-    --text-3: rgba(60, 60, 67, 0.42);
-    --sub: #111114;
-    --accent: #0062d1;
-    --red: #e0352b;
-    --green: #2a9d48;
-    --orange: #e08600;
+    --separator: rgba(60, 60, 67, 0.29);
+    --text: #000000;
+    --text-2: rgba(60, 60, 67, 0.6);
+    --text-3: rgba(60, 60, 67, 0.3);
+    --sub: #000000;
+    --accent: #007aff;
+    --red: #ff3b30;
+    --green: #34c759;
+    --orange: #ff9500;
     --gray: #8e8e93;
     --fill: rgba(118, 118, 128, 0.12);
     --fill-press: rgba(118, 118, 128, 0.22);
@@ -82,15 +82,15 @@
   --surface-solid: #f2f2f7;
   --surface-2: #e5e5ea;
   --group: #fff;
-  --separator: rgba(60, 60, 67, 0.18);
-  --text: #1c1c1e;
-  --text-2: rgba(60, 60, 67, 0.72);
-  --text-3: rgba(60, 60, 67, 0.42);
-  --sub: #111114;
-  --accent: #0062d1;
-  --red: #e0352b;
-  --green: #2a9d48;
-  --orange: #e08600;
+  --separator: rgba(60, 60, 67, 0.29);
+  --text: #000000;
+  --text-2: rgba(60, 60, 67, 0.6);
+  --text-3: rgba(60, 60, 67, 0.3);
+  --sub: #000000;
+  --accent: #007aff;
+  --red: #ff3b30;
+  --green: #34c759;
+  --orange: #ff9500;
   --gray: #8e8e93;
   --fill: rgba(118, 118, 128, 0.12);
   --fill-press: rgba(118, 118, 128, 0.22);
@@ -117,8 +117,8 @@ body.immersive {
   --group: #2c2c2e;
   --separator: rgba(84, 84, 88, 0.55);
   --text: #f5f5f7;
-  --text-2: rgba(235, 235, 245, 0.62);
-  --text-3: rgba(235, 235, 245, 0.32);
+  --text-2: rgba(235, 235, 245, 0.6);
+  --text-3: rgba(235, 235, 245, 0.3);
   --sub: #fff;
   --accent: #0a84ff;
   --red: #ff453a;

@@ -54,7 +54,8 @@ its own icon.
   spelling as under live subtitles; `test/learn.test.js` keeps them in sync).
 - **Practice cards** in two modes: *Понимать* (English → Russian) and *Говорить* (Russian → English).
 - **Read aloud in American English:** every phrase and word plays at normal or slow speed with
-  Deepgram's Aura-2 voices (Thalia, or Orion for a male voice), through `GET /api/tts`. It is real
+  Deepgram's Aura-2 voices (Thalia, or Orion for a male voice), through `GET /api/tts`, at
+  0,5×, 1×, 1,5× or 2× speed (one remembered setting for every play button). It is real
   audio, so it plays even when an iPhone is on silent. The same line always gives the same MP3, so
   Vercel's CDN keeps it a year and each line is generated once. Without `DEEPGRAM_API_KEY` the
   page falls back to the phone's own US English voice.
@@ -69,6 +70,9 @@ its own icon.
   sprite inside `learn.html`; licence texts in `public/icons-LICENSE.txt`.
 
 ## Appearance
+
+Colours are Apple's system colours (iOS Human Interface Guidelines) in light and dark; coloured
+text on light backgrounds uses Apple's high-contrast variants.
 
 Settings → Appearance: Automatic (follows the phone), Light or Dark. Full-screen (cinema) mode is
 always dark so the screen doesn't light up the room. The course uses the same setting.

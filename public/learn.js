@@ -14,7 +14,7 @@ const darkQuery = matchMedia("(prefers-color-scheme: dark)");
 function matchBrowserBar() {
   const theme = document.documentElement.dataset.theme;
   const dark = theme ? theme === "dark" : darkQuery.matches;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#0c0d10" : "#f6f7f9");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#000000" : "#f2f2f7");
 }
 matchBrowserBar();
 darkQuery.addEventListener("change", matchBrowserBar);
@@ -80,6 +80,10 @@ const player = new Audio();
 player.preload = "auto";
 let serverTts = false; // set once the app's server says it can read aloud
 let voiceChoice = load("learnVoice", "female"); // "female" (Thalia) or "male" (Orion)
+// Playback speed for every play button, remembered on this device. Pitch stays natural.
+const SPEEDS = [0.5, 1, 1.5, 2];
+let speed = SPEEDS.includes(load("learnSpeed", 1)) ? load("learnSpeed", 1) : 1;
+const speedLabel = (r) => `${String(r).replace(".", ",")}×`; // "0,5×": Russian decimal comma
 const canPlay = () => Boolean(RECORDINGS || serverTts || tts);
 
 const bundles = new Map(); // lesson id → Promise<{ text: data URL }>
@@ -153,8 +157,8 @@ function playFile(src, rate) {
   return player.play();
 }
 
-/** Read `text` aloud in American English. `rate`: 1 normal, 0.7 slow. */
-async function speak(text, rate = 1, button = null) {
+/** Read `text` aloud in American English, at the chosen speed unless `rate` says otherwise. */
+async function speak(text, rate = speed, button = null) {
   if (!text) return;
   tts?.cancel();
   player.pause();
@@ -204,8 +208,25 @@ function playButton(text, label = "Слушать") {
   return h("button", {
     class: "play", type: "button", "aria-label": `${label}: ${text}`,
     onpointerdown: () => prefetch(text),
-    onclick: (e) => speak(text, 1, e.currentTarget),
+    onclick: (e) => speak(text, speed, e.currentTarget),
   }, icon("play"));
+}
+
+/**
+ * Speed choice: 0,5× · 1× · 1,5× · 2×. Picking one changes the speed everywhere and updates
+ * every speed choice on the screen; `onPick` can also play something at the new speed.
+ */
+function speedChips(onPick) {
+  return h("div", { class: "chips speed", role: "radiogroup", "aria-label": "Скорость озвучки" },
+    SPEEDS.map((r) => h("button", {
+      class: "chip", type: "button", role: "radio", "aria-checked": String(r === speed), "data-speed": r,
+      onclick: (e) => {
+        speed = r;
+        save("learnSpeed", r);
+        for (const chip of document.querySelectorAll(".speed .chip")) chip.setAttribute("aria-checked", String(Number(chip.dataset.speed) === r));
+        onPick?.(r, e.currentTarget);
+      },
+    }, speedLabel(r))));
 }
 
 // English words that can be tapped to hear one at a time.
@@ -214,7 +235,7 @@ function tappableWords(text) {
   return text.split(/(\s+)/).map((part) => {
     if (!part.trim()) return part;
     const word = part.replace(/[^\p{L}\p{N}'’-]/gu, "");
-    return h("button", { class: "w", type: "button", onpointerdown: () => prefetch(word), onclick: () => speak(word, 0.9) }, part);
+    return h("button", { class: "w", type: "button", onpointerdown: () => prefetch(word), onclick: () => speak(word, speed) }, part);
   });
 }
 
@@ -364,6 +385,10 @@ function todayCard() {
                 renderCourse(currentTrack);
                 speak(v === "female" ? "Hi! I'll read the phrases for you." : "Hello! I'll read the phrases for you.");
               }))))
+        : null,
+      canPlay()
+        ? h("div", { class: "option" }, h("span", { class: "option-label" }, "Скорость"),
+            speedChips(() => speak("This is how fast I'll read the phrases.")))
         : null,
     ),
   );
@@ -665,7 +690,9 @@ function renderUnit(lesson) {
         )
       : null,
     h("section", { class: "card" },
-      h("h2", {}, `${isGrammar ? "Примеры" : "Фразы урока"} · ${lesson.phrases.length}`),
+      h("div", { class: "card-head" },
+        h("h2", {}, `${isGrammar ? "Примеры" : "Фразы урока"} · ${lesson.phrases.length}`),
+        canPlay() ? speedChips() : null),
       h("ol", { class: "phrase-list" }, lesson.phrases.map((p) => h("li", {}, playButton(p.en), line(p.en, p.say, p.ru)))),
     ),
     h("a", { class: "btn primary wide", href: `#practice-${lesson.id}` }, "Начать практику", icon("next")),
@@ -732,9 +759,9 @@ function renderPractice(deck) {
         ? h("div", { class: "back" }, back)
         : h("button", { class: "btn reveal", type: "button", onclick: () => { s.revealed = true; renderPractice(deck); } }, understand ? "Показать перевод" : "Показать ответ"),
       h("div", { class: "tools" },
-        canPlay() ? h("button", { class: "btn", type: "button", onclick: (e) => speak(p.en, 1, e.currentTarget) }, icon("play"), "Слушать") : null,
-        canPlay() ? h("button", { class: "btn", type: "button", onclick: (e) => speak(p.en, 0.7, e.currentTarget) }, icon("slow"), "Медленно") : null,
+        canPlay() ? h("button", { class: "btn listen", type: "button", onclick: (e) => speak(p.en, speed, e.currentTarget) }, icon("play"), "Слушать") : null,
         h("button", { class: "btn", type: "button", id: "sayBtn", "data-needs-app": "", hidden: !Recognizer, onclick: () => checkSpeech(p) }, icon("mic"), "Сказать"),
+        canPlay() ? speedChips((r, chip) => speak(p.en, r, chip)) : null,
       ),
       feedbackBlock(s.feedback),
     ),

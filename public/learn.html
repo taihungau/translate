@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f6f7f9">
+  <meta name="theme-color" content="#f2f2f7">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Английский">
   <title>Курс английского</title>
@@ -14,50 +14,56 @@
   <style>
     /* Layout: one reading column (max 640px). Course: progress summary, then the three levels with
        their units in order. Unit: goal, grammar note and phrase list. Practice: one card at a time. */
+    /* Layout: one reading column (max 640px). Course: progress summary, then the three levels with
+       their units in order. Unit: goal, grammar note and phrase list. Practice: one card at a time.
+       Colours: Apple's system colours (iOS Human Interface Guidelines), light and dark: grouped
+       background, white / #1C1C1E cards, label colours, separators, systemBlue, systemGreen,
+       systemRed and systemOrange. Text in green, red or orange on light backgrounds uses Apple's
+       high-contrast variants (#248A3D, #D70015, #C93400) so it stays readable. */
     :root {
-      --bg: #f6f7f9;
-      --card: #ffffff;
-      --inset: #eef0f4;
-      --line: #e2e5eb;
-      --ink: #14171c;
-      --ink-2: #555d6b;
-      --ink-3: #8a919e;
-      --accent: #1d5bbf;
+      --bg: #f2f2f7;               /* systemGroupedBackground */
+      --card: #ffffff;             /* secondarySystemGroupedBackground */
+      --inset: #e5e5ea;            /* systemGray5 */
+      --line: #c6c6c8;             /* opaqueSeparator */
+      --ink: #000000;              /* label */
+      --ink-2: rgba(60, 60, 67, 0.6);   /* secondaryLabel */
+      --ink-3: rgba(60, 60, 67, 0.3);   /* tertiaryLabel */
+      --accent: #007aff;           /* systemBlue */
       --on-accent: #ffffff;
-      --accent-soft: #e7eefa;
-      --say: #8a5200;
-      --ok: #1d7a3c;
-      --ok-soft: #e3f3e8;
-      --miss: #bf3328;
-      --miss-soft: #fbe8e6;
-      --flame: #e8742a;
-      --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 2px 6px rgba(16, 24, 40, 0.06);
+      --accent-soft: rgba(0, 122, 255, 0.12);
+      --say: #c93400;              /* systemOrange, high contrast */
+      --ok: #248a3d;               /* systemGreen, high contrast */
+      --ok-soft: rgba(52, 199, 89, 0.15);
+      --miss: #d70015;             /* systemRed, high contrast */
+      --miss-soft: rgba(255, 59, 48, 0.12);
+      --flame: #ff9500;            /* systemOrange */
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.05);
       /* Bevelled buttons: a lighter top edge, a darker bottom edge they sink into when pressed. */
-      --btn-top: #ffffff; --btn-face: #eef1f5; --btn-edge: #c6ccd6; --btn-shine: rgba(255, 255, 255, 0.95); --btn-drop: rgba(16, 24, 40, 0.1);
-      --pri-top: #2f70d8; --pri-face: #1d5bbf; --pri-edge: #123f86;
+      --btn-top: #ffffff; --btn-face: #f2f2f7; --btn-edge: #c6c6c8; --btn-shine: rgba(255, 255, 255, 0.95); --btn-drop: rgba(0, 0, 0, 0.08);
+      --pri-top: #2a8cff; --pri-face: #007aff; --pri-edge: #0055b3;
       --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       --radius: 14px;
       color-scheme: light;
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
-        --bg: #0c0d10; --card: #17191e; --inset: #22252c; --line: #2b2f37;
-        --ink: #f2f4f7; --ink-2: #a5acb9; --ink-3: #727a88;
-        --accent: #5b9bff; --on-accent: #0c0d10; --accent-soft: #1b2639;
-        --say: #f0c35a; --ok: #4fcf7d; --ok-soft: #15291d; --miss: #ff7b70; --miss-soft: #351a1a;
-        --shadow: none; color-scheme: dark; --flame: #ff9a4d;
-        --btn-top: #2d3139; --btn-face: #23262d; --btn-edge: #07080a; --btn-shine: rgba(255, 255, 255, 0.07); --btn-drop: rgba(0, 0, 0, 0.45);
-        --pri-top: #78adff; --pri-face: #5b9bff; --pri-edge: #2b5db0;
+        --bg: #000000; --card: #1c1c1e; --inset: #2c2c2e; --line: #38383a;
+        --ink: #ffffff; --ink-2: rgba(235, 235, 245, 0.6); --ink-3: rgba(235, 235, 245, 0.3);
+        --accent: #0a84ff; --on-accent: #ffffff; --accent-soft: rgba(10, 132, 255, 0.2);
+        --say: #ff9f0a; --ok: #30d158; --ok-soft: rgba(48, 209, 88, 0.18); --miss: #ff453a; --miss-soft: rgba(255, 69, 58, 0.2);
+        --flame: #ff9f0a; --shadow: none; color-scheme: dark;
+        --btn-top: #3a3a3c; --btn-face: #2c2c2e; --btn-edge: #000000; --btn-shine: rgba(255, 255, 255, 0.08); --btn-drop: rgba(0, 0, 0, 0.5);
+        --pri-top: #2b95ff; --pri-face: #0a84ff; --pri-edge: #0058b8;
       }
     }
     :root[data-theme="dark"] {
-      --bg: #0c0d10; --card: #17191e; --inset: #22252c; --line: #2b2f37;
-      --ink: #f2f4f7; --ink-2: #a5acb9; --ink-3: #727a88;
-      --accent: #5b9bff; --on-accent: #0c0d10; --accent-soft: #1b2639;
-      --say: #f0c35a; --ok: #4fcf7d; --ok-soft: #15291d; --miss: #ff7b70; --miss-soft: #351a1a;
-      --shadow: none; color-scheme: dark; --flame: #ff9a4d;
-      --btn-top: #2d3139; --btn-face: #23262d; --btn-edge: #07080a; --btn-shine: rgba(255, 255, 255, 0.07); --btn-drop: rgba(0, 0, 0, 0.45);
-      --pri-top: #78adff; --pri-face: #5b9bff; --pri-edge: #2b5db0;
+      --bg: #000000; --card: #1c1c1e; --inset: #2c2c2e; --line: #38383a;
+      --ink: #ffffff; --ink-2: rgba(235, 235, 245, 0.6); --ink-3: rgba(235, 235, 245, 0.3);
+      --accent: #0a84ff; --on-accent: #ffffff; --accent-soft: rgba(10, 132, 255, 0.2);
+      --say: #ff9f0a; --ok: #30d158; --ok-soft: rgba(48, 209, 88, 0.18); --miss: #ff453a; --miss-soft: rgba(255, 69, 58, 0.2);
+      --flame: #ff9f0a; --shadow: none; color-scheme: dark;
+      --btn-top: #3a3a3c; --btn-face: #2c2c2e; --btn-edge: #000000; --btn-shine: rgba(255, 255, 255, 0.08); --btn-drop: rgba(0, 0, 0, 0.5);
+      --pri-top: #2b95ff; --pri-face: #0a84ff; --pri-edge: #0058b8;
     }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -170,6 +176,12 @@
     .option { display: flex; align-items: center; gap: 10px; }
     .option-label { font-size: 14px; color: var(--ink-2); }
     .chips { display: flex; gap: 6px; }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .speed .chip { min-width: 46px; padding: 0 8px; }
+    /* Слушать and Сказать side by side, the four speeds as an even row below */
+    .tools .btn { flex: 1 1 40%; }
+    .tools .speed { flex: 1 1 100%; }
+    .tools .speed .chip { flex: 1; }
     .chip { min-width: 40px; min-height: 32px; padding: 0 12px; border-radius: 8px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .level { display: flex; flex-direction: column; gap: 10px; }
     .level-head { display: flex; align-items: center; gap: 10px; }
