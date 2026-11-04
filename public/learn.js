@@ -49,15 +49,17 @@ function h(tag, attrs = {}, ...children) {
   }
   return el;
 }
-function icon(name) {
+function icon(name, set = "i") {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "i");
   svg.setAttribute("aria-hidden", "true");
   const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-  use.setAttribute("href", `#i-${name}`);
+  use.setAttribute("href", `#${set}-${name}`); // "i": the page's own icons, "u": lesson icons (Lucide)
   svg.append(use);
   return svg;
 }
+// Replaces the screen's content. Parts left out with null or false are skipped, not shown as text.
+const setView = (...parts) => view.replaceChildren(...parts.flat().filter((part) => part != null && part !== false));
 const backLink = (href, text) => h("a", { class: "back", href }, icon("back"), text);
 const plural = (n, one, few, many) => {
   const mod10 = n % 10;
@@ -463,7 +465,7 @@ function renderCourse(track = currentTrack) {
   const films = load("heardPhrases", []).length;
   const started = (lesson) => lesson.phrases.some(knownOnce);
 
-  view.replaceChildren(
+  setView(
     h("div", { class: "nav" },
       inApp ? backLink("./", "Субтитры") : h("a", { class: "back", href: APP_URL, target: "_blank", rel: "noopener" }, icon("back"), "Субтитры"),
     ),
@@ -488,6 +490,7 @@ function renderCourse(track = currentTrack) {
           ? h("a", { class: "btn primary", href: `#unit-${next.id}` }, `${started(next) || practised ? "Продолжить" : "Начать"}: урок ${UNIT_NO.get(next.id)}`, icon("next"))
           : h("span", { class: "btn" }, "Все уроки раздела пройдены"),
         due ? h("a", { class: "btn", href: "#practice-review" }, icon("repeat"), `Повторить · ${due}`) : null,
+        track === "grammar" ? h("a", { class: "btn", href: "#grammar-plan" }, icon("calendar", "u"), "Программа и план") : null,
       ),
     ),
     ...LEVELS.filter((level) => level.track === track).map((level) =>
@@ -529,6 +532,91 @@ function renderCourse(track = currentTrack) {
   );
 }
 
+// The grammar programme: how a lesson works, every unit with what it teaches, and a 16-week plan
+// that pairs each grammar unit with two everyday lessons, marking the week she is on.
+function renderGrammarPlan() {
+  document.title = "Программа по грамматике · Курс английского";
+  const grammar = trackLessons("grammar");
+  const daily = trackLessons("daily");
+  const next = nextLesson("grammar");
+  const nowWeek = next ? grammar.indexOf(next) : -1;
+  const link = (lesson) => h("a", { href: `#unit-${lesson.id}`, class: unitDone(lesson) ? "done" : null }, lesson.title);
+
+  const planRow = (lesson) => {
+    const known = lesson.phrases.filter(knownOnce).length;
+    const done = known === lesson.phrases.length;
+    const mistake = lesson.mistakes?.[0];
+    return h("li", {},
+      h("a", { class: `unit plan-unit${done ? " done" : ""}${lesson === next ? " next" : ""}`, href: `#unit-${lesson.id}` },
+        lessonIcon(lesson.icon),
+        h("span", { class: "unit-text" },
+          h("small", {}, `Урок ${UNIT_NO.get(lesson.id)} · ${lesson.en} · `, h("span", { class: "num" }, done ? "пройдено" : `${known} из ${lesson.phrases.length}`)),
+          h("b", {}, lesson.title),
+          h("span", { class: "plan-goal" }, lesson.goal),
+          mistake ? h("span", { class: "plan-mistake", lang: "en" },
+            h("s", {}, h("span", { class: "visually-hidden" }, "Неправильно: "), mistake.wrong), " → ",
+            h("span", { class: "right" }, h("span", { class: "visually-hidden" }, "Правильно: "), mistake.right)) : null,
+        ),
+        done ? h("span", { class: "unit-done", "aria-label": "Пройдено" }, icon("check")) : icon("next"),
+      ),
+    );
+  };
+
+  setView(
+    h("div", { class: "nav" }, backLink("#grammar", "Грамматика")),
+    h("header", {},
+      h("p", { class: "eyebrow" }, "Курс английского · Грамматика"),
+      h("h1", {}, "Программа по грамматике"),
+      h("p", { class: "lede" }, `${grammar.length} уроков в двух уровнях: от местоимений и to be до Present Perfect и условных предложений. По одному уроку в неделю — около четырёх месяцев.`),
+    ),
+    h("section", { class: "card" },
+      h("h2", {}, "Как устроен урок"),
+      h("ol", { class: "steps" }, [
+        ["Правило", "коротко и по-русски"],
+        ["Формы", "таблица: утверждение, отрицание, вопрос"],
+        ["Частые ошибки", "как обычно ошибаются русскоговорящие и как правильно"],
+        ["Примеры", "8 фраз с переводом, произношением русскими буквами и американской озвучкой"],
+        ["Практика", "карточки в обе стороны, повторение вслух и проверка произношения"],
+      ].map(([what, how]) => h("li", {}, h("b", {}, what), h("span", {}, how)))),
+    ),
+    ...LEVELS.filter((level) => level.track === "grammar").map((level) =>
+      h("section", { class: "level", "aria-label": level.title },
+        h("div", { class: "level-head" }, h("span", { class: "badge" }, level.badge ?? level.id), h("h3", {}, level.title)),
+        h("p", { class: "level-about" }, level.about),
+        h("ol", { class: "units" }, LESSONS.filter((lesson) => lesson.level === level.id).map(planRow)),
+      )),
+    h("section", { class: "card", id: "weeks" },
+      h("h2", {}, `План на ${grammar.length} недель`),
+      h("p", { class: "plan-note" }, "Каждую неделю — один урок грамматики и два урока из раздела «Каждый день». В день — около 10 карточек, это 5–10 минут."),
+      h("div", { class: "table-wrap" }, h("table", { class: "weeks" },
+        h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Неделя"), h("th", { scope: "col" }, "Грамматика"), h("th", { scope: "col" }, "Каждый день"))),
+        h("tbody", {}, grammar.map((lesson, i) => {
+          const pair = daily.slice(i * 2, i * 2 + 2);
+          const weekDone = [lesson, ...pair].every(unitDone);
+          return h("tr", { class: i === nowWeek ? "now" : weekDone ? "done" : null },
+            h("td", { class: "num" }, i + 1, i === nowWeek ? h("span", { class: "pill" }, "сейчас") : null),
+            h("td", {}, link(lesson)),
+            h("td", {}, pair.length ? pair.flatMap((d, k) => [k ? h("br") : null, link(d)]) : "Повторение пройденного"),
+          );
+        })),
+      )),
+    ),
+    h("section", { class: "card" },
+      h("h2", {}, "Как заниматься"),
+      h("ul", { class: "tips" }, [
+        "Понемногу, но каждый день: 10 карточек лучше, чем час раз в неделю.",
+        "Сначала послушайте фразу, потом медленно, потом повторите вслух.",
+        "В режиме «Говорить» нажмите «Сказать»: приложение покажет, какие слова не расслышало.",
+        "Не пропускайте «Повторить»: фразы возвращаются через 1, 3, 7, 14 и 30 дней.",
+        "После 10-й недели добавьте раздел «Работа» — по уроку в неделю.",
+      ].map((tip) => h("li", {}, tip))),
+    ),
+    next
+      ? h("a", { class: "btn primary wide", href: `#unit-${next.id}` }, `${next.phrases.some(knownOnce) ? "Продолжить" : "Начать"}: урок ${UNIT_NO.get(next.id)} · ${next.title}`, icon("next"))
+      : h("span", { class: "btn wide" }, "Все уроки грамматики пройдены"),
+  );
+}
+
 function renderUnit(lesson) {
   const level = levelOf(lesson);
   const track = TRACKS.find((t) => t.id === level.track);
@@ -539,7 +627,7 @@ function renderUnit(lesson) {
     say ? h("span", { class: "say", lang: "ru" }, say) : null,
     h("span", { class: "ru" }, ru));
 
-  view.replaceChildren(
+  setView(
     h("div", { class: "nav" }, backLink(`#${track.id}`, track.title)),
     h("header", { class: "unit-head" },
       lessonIcon(lesson.icon, "tile big"),
@@ -620,7 +708,7 @@ function renderPractice(deck) {
     renderPractice(deck);
   };
 
-  view.replaceChildren(
+  setView(
     h("div", { class: "nav" },
       backLink(deck.back, deck.lesson ? "Урок" : "Курс"),
       h("span", { class: "count num" }, `${Math.min(s.index + 1, s.queue.length)} из ${s.queue.length}`),
@@ -727,7 +815,7 @@ function renderDone() {
   const siblings = lesson ? trackLessons(trackOf(lesson)) : [];
   const next = lesson && siblings[siblings.indexOf(lesson) + 1];
   const courseHash = lesson ? `#${trackOf(lesson)}` : `#${currentTrack}`;
-  view.replaceChildren(
+  setView(
     h("div", { class: "nav" }, backLink(courseHash, "Курс")),
     h("section", { class: "card done-card" },
       done ? lessonIcon("trophy", "done-mark") : h("span", { class: "done-mark" }, icon("check")),
@@ -752,6 +840,11 @@ function route() {
   attempt?.cancel();
   stopSound();
   const hash = location.hash.slice(1);
+  if (hash === "grammar-plan") {
+    session = null;
+    renderGrammarPlan();
+    return scrollTo(0, 0);
+  }
   if (hash.startsWith("unit-")) {
     const lesson = LESSONS.find((l) => l.id === hash.slice(5));
     if (lesson) { session = null; renderUnit(lesson); return scrollTo(0, 0); }
