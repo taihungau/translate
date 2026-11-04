@@ -13,6 +13,9 @@
     },
     "api/config.js": {
       "maxDuration": 5
+    },
+    "api/tts.js": {
+      "maxDuration": 15
     }
   }
 }

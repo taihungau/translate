@@ -53,7 +53,13 @@ its own icon.
 - Every phrase has the Russian meaning and the English **written in Russian letters** (the same
   spelling as under live subtitles; `test/learn.test.js` keeps them in sync).
 - **Practice cards** in two modes: *Понимать* (English → Russian) and *Говорить* (Russian → English).
-  Every phrase and word can be played aloud at normal or slow speed (the device's English voice).
+- **Read aloud in American English:** every phrase and word plays at normal or slow speed with
+  Deepgram's Aura-2 voices (Thalia, or Orion for a male voice), through `GET /api/tts`. It is real
+  audio, so it plays even when an iPhone is on silent. The same line always gives the same MP3, so
+  Vercel's CDN keeps it a year and each line is generated once. Without `DEEPGRAM_API_KEY` the
+  page falls back to the phone's own US English voice.
+- **Daily goal and streak:** 5, 10 or 20 cards a day with a progress ring, days in a row, and a
+  small celebration when the goal is met or a unit is finished.
 - **Speaking check:** she says the phrase, Deepgram writes down what it heard, and the missed words
   are marked in red with a score.
 - **Spaced repetition:** a known phrase comes back after 1, 3, 7, 14 and 30 days; a forgotten one

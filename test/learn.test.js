@@ -4,7 +4,7 @@ import { dictionary } from "cmu-pronouncing-dictionary"; // the same version pro
 import { enToCyrillic } from "../public/pronounce.js";
 import { readFileSync } from "node:fs";
 import { TRACKS, LEVELS, LESSONS } from "../public/lessons.js";
-import { compareSpeech, tokens, grade, isLearned, isDue, INTERVALS } from "../public/learn-core.js";
+import { compareSpeech, tokens, grade, isLearned, isDue, INTERVALS, dayKey, streak } from "../public/learn-core.js";
 
 const marks = (r) => r.words.map((w) => (w.ok ? w.word : `[${w.word}]`)).join(" ");
 
@@ -75,4 +75,16 @@ test("spaced repetition: known phrases come back later, forgotten ones right awa
   assert.ok(isDue({ box: 0, due: now }, now));
   assert.ok(!isDue(undefined, now)); // never seen: new, not due
   assert.equal(grade({ box: INTERVALS.length - 1, due: 0 }, true, now).box, INTERVALS.length - 1);
+});
+
+test("daily streak: days in a row, still alive until today is over", () => {
+  const today = new Date(2026, 10, 4, 15, 0); // 4 November, afternoon
+  assert.equal(dayKey(today), "2026-11-04");
+  assert.equal(dayKey(new Date(2026, 0, 9)), "2026-01-09");
+  assert.equal(streak({}, today), 0);
+  assert.equal(streak({ "2026-11-04": 3 }, today), 1);
+  assert.equal(streak({ "2026-11-04": 3, "2026-11-03": 10, "2026-11-02": 1 }, today), 3);
+  assert.equal(streak({ "2026-11-03": 10, "2026-11-02": 1 }, today), 2, "not practised yet today");
+  assert.equal(streak({ "2026-11-04": 3, "2026-11-02": 1 }, today), 1, "a missed day breaks it");
+  assert.equal(streak({ "2026-11-01": 4, "2026-10-31": 2 }, new Date(2026, 10, 1)), 2, "across months");
 });

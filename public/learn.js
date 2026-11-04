@@ -1,8 +1,9 @@
 // The Learn page: an English course for a Russian speaker. Course → unit (goal, grammar,
-// phrases) → practice cards. Phrases are read aloud by the device's English voice; in the
-// subtitles app, the speaking check listens with the same speech recognition as live subtitles.
+// phrases) → practice cards, with a daily goal and a streak. In the subtitles app, phrases are
+// read aloud by Deepgram's American voices and the speaking check listens with the same speech
+// recognition as live subtitles.
 import { TRACKS, LEVELS, LESSONS } from "./lessons.js";
-import { compareSpeech, grade, isLearned, isDue, verdict } from "./learn-core.js";
+import { compareSpeech, grade, isLearned, isDue, verdict, dayKey, streak } from "./learn-core.js";
 
 const APP_URL = "https://translate-hyperlinks-projects.vercel.app/";
 const view = document.getElementById("view");
@@ -66,40 +67,130 @@ const plural = (n, one, few, many) => {
   return many;
 };
 
-// ---------------------------------------------------------------- listening (the device's voice)
+// ---------------------------------------------------------------- listening
+// In the app, lines are read by Deepgram's American voices (GET api/tts, an MP3 the CDN keeps).
+// An audio file plays even when an iPhone is on silent, unlike the phone's own voice, which is
+// only the fallback. A published copy plays the recordings published with it (LEARN_RECORDINGS).
+const RECORDINGS = globalThis.LEARN_RECORDINGS ?? null;
 const tts = "speechSynthesis" in window ? window.speechSynthesis : null;
-let voice = null;
-function pickVoice() {
+const player = new Audio();
+player.preload = "auto";
+let serverTts = false; // set once the app's server says it can read aloud
+let voiceChoice = load("learnVoice", "female"); // "female" (Thalia) or "male" (Orion)
+const canPlay = () => Boolean(RECORDINGS || serverTts || tts);
+
+const downloads = new Map(); // "voice|text" → { promise, url }
+function download(text) {
+  const key = `${voiceChoice}|${text}`;
+  if (!downloads.has(key)) {
+    let code = "";
+    try { code = localStorage.getItem("accessCode") || ""; } catch { /* storage blocked */ }
+    const query = new URLSearchParams({ text, voice: voiceChoice, ...(code ? { code } : {}) });
+    const entry = { url: null };
+    entry.promise = fetch(`api/tts?${query}`)
+      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((blob) => (entry.url = URL.createObjectURL(blob)));
+    entry.promise.catch(() => downloads.delete(key));
+    downloads.set(key, entry);
+  }
+  return downloads.get(key);
+}
+/** Start downloading a line's audio before it is played, so the tap plays it at once. */
+const prefetch = (text) => { if (serverTts && text) download(text).promise.catch(() => {}); };
+
+// Phones only let sound start from a tap. When the audio is still downloading, a moment of
+// silence is played inside the tap, which lets this player start once the audio arrives.
+const SILENCE = (() => {
+  const samples = 400;
+  const bytes = new Uint8Array(44 + samples).fill(128, 44);
+  const view = new DataView(bytes.buffer);
+  const text = (at, str) => [...str].forEach((c, i) => view.setUint8(at + i, c.charCodeAt(0)));
+  text(0, "RIFF"); view.setUint32(4, 36 + samples, true); text(8, "WAVEfmt ");
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, 8000, true); view.setUint32(28, 8000, true); view.setUint16(32, 1, true); view.setUint16(34, 8, true);
+  text(36, "data"); view.setUint32(40, samples, true);
+  return `data:audio/wav;base64,${btoa(String.fromCharCode(...bytes))}`;
+})();
+
+let playingButton = null;
+function markPlaying(button) {
+  playingButton?.classList.remove("is-playing");
+  playingButton = button ?? null;
+  playingButton?.classList.add("is-playing");
+}
+for (const done of ["ended", "pause", "error"]) player.addEventListener(done, () => markPlaying(null));
+
+function playFile(src, rate) {
+  player.src = src;
+  player.defaultPlaybackRate = rate;
+  player.playbackRate = rate;
+  player.preservesPitch = true;
+  return player.play();
+}
+
+/** Read `text` aloud in American English. `rate`: 1 normal, 0.7 slow. */
+async function speak(text, rate = 1, button = null) {
+  if (!text) return;
+  tts?.cancel();
+  player.pause();
+  markPlaying(button);
+  try {
+    if (RECORDINGS?.[text]) return await playFile(RECORDINGS[text], rate);
+    if (serverTts) {
+      const entry = download(text);
+      if (entry.url) return await playFile(entry.url, rate); // downloaded already: plays within the tap
+      player.src = SILENCE;
+      player.play().catch(() => {});
+      return await playFile(await entry.promise, rate);
+    }
+  } catch { /* fall back to the device's voice */ }
+  speakWithDevice(text, rate, button);
+}
+
+let deviceVoice = null;
+function pickDeviceVoice() {
   const english = tts.getVoices().filter((v) => /^en[-_]/i.test(v.lang));
   const rank = (v) =>
-    (/^en[-_]US/i.test(v.lang) ? 3 : /^en[-_]GB/i.test(v.lang) ? 2 : 0) +
-    (/natural|neural|premium|enhanced|samantha|google us english|aria|jenny/i.test(v.name) ? 3 : 0) +
+    (/^en[-_]US/i.test(v.lang) ? 4 : 0) + // American first
+    (/natural|neural|premium|enhanced|samantha|google us english|aria|jenny/i.test(v.name) ? 2 : 0) +
     (v.localService ? 1 : 0);
-  voice = english.sort((a, b) => rank(b) - rank(a))[0] ?? null;
+  deviceVoice = english.sort((a, b) => rank(b) - rank(a))[0] ?? null;
 }
 if (tts) {
-  pickVoice();
-  tts.addEventListener?.("voiceschanged", pickVoice);
+  pickDeviceVoice();
+  tts.addEventListener?.("voiceschanged", pickDeviceVoice);
 }
-function speak(text, rate = 0.95) {
-  if (!tts || !text) return;
-  tts.cancel();
+function speakWithDevice(text, rate, button) {
+  if (!tts) return markPlaying(null);
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = voice?.lang ?? "en-US";
-  if (voice) utterance.voice = voice;
-  utterance.rate = rate;
+  utterance.lang = "en-US";
+  if (deviceVoice) utterance.voice = deviceVoice;
+  utterance.rate = rate * 0.95;
+  utterance.onend = utterance.onerror = () => { if (playingButton === button) markPlaying(null); };
   tts.speak(utterance);
 }
-const playButton = (text, label = "Слушать") =>
-  tts ? h("button", { class: "play", type: "button", "aria-label": `${label}: ${text}`, onclick: () => speak(text) }, icon("play")) : null;
+
+function stopSound() {
+  tts?.cancel();
+  player.pause();
+}
+
+function playButton(text, label = "Слушать") {
+  if (!canPlay()) return null;
+  return h("button", {
+    class: "play", type: "button", "aria-label": `${label}: ${text}`,
+    onpointerdown: () => prefetch(text),
+    onclick: (e) => speak(text, 1, e.currentTarget),
+  }, icon("play"));
+}
 
 // English words that can be tapped to hear one at a time.
 function tappableWords(text) {
-  if (!tts) return [text];
+  if (!canPlay()) return [text];
   return text.split(/(\s+)/).map((part) => {
     if (!part.trim()) return part;
     const word = part.replace(/[^\p{L}\p{N}'’-]/gu, "");
-    return h("button", { class: "w", type: "button", onclick: () => speak(word, 0.8) }, part);
+    return h("button", { class: "w", type: "button", onpointerdown: () => prefetch(word), onclick: () => speak(word, 0.9) }, part);
   });
 }
 
@@ -115,6 +206,7 @@ async function detectApp() {
     const res = await fetch("api/config", { cache: "no-store" });
     const config = await res.json();
     inApp = true;
+    serverTts = Boolean(config.tts);
     if (config.cloudSpeech) ({ CloudRecognizer: Recognizer } = await import("./cloud-asr.js"));
     if (load("heardPhrases", []).length) {
       const { pronounce, loadDictionary } = await import("./pronounce.js");
@@ -126,7 +218,11 @@ async function detectApp() {
   }
   // Show what just became available, without restarting a practice session in progress.
   if (!session) route();
-  else for (const el of document.querySelectorAll("[data-needs-app]")) el.hidden = false;
+  else {
+    for (const el of document.querySelectorAll("[data-needs-app]")) el.hidden = false;
+    const p = session.queue[session.index];
+    prefetch(p?.en);
+  }
   showFoot();
 }
 
@@ -149,7 +245,7 @@ async function speechToken() {
 
 let attempt = null; // the speaking attempt in progress
 async function listenOnce(onInterim) {
-  tts?.cancel();
+  stopSound();
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   });
@@ -177,8 +273,117 @@ async function listenOnce(onInterim) {
   });
 }
 
+// ---------------------------------------------------------------- daily goal and streak
+const stats = load("learnStats", { goal: 10, days: {} }); // days: dayKey → cards practised
+const todayCount = () => stats.days[dayKey()] ?? 0;
+
+/** Counts a practised card; true when it completes today's goal. */
+function countCard() {
+  const key = dayKey();
+  const before = stats.days[key] ?? 0;
+  stats.days[key] = before + 1;
+  const keys = Object.keys(stats.days).sort();
+  while (keys.length > 400) delete stats.days[keys.shift()]; // a year is plenty
+  save("learnStats", stats);
+  return before < stats.goal && before + 1 >= stats.goal;
+}
+
+const streakText = (days) => `${days} ${plural(days, "день", "дня", "дней")} подряд`;
+
+function goalRing(done, goal) {
+  const NS = "http://www.w3.org/2000/svg";
+  const r = 25;
+  const length = 2 * Math.PI * r;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 64 64");
+  svg.setAttribute("class", "ring");
+  svg.setAttribute("aria-hidden", "true");
+  for (const cls of ["ring-track", "ring-value"]) {
+    const c = document.createElementNS(NS, "circle");
+    c.setAttribute("cx", "32"); c.setAttribute("cy", "32"); c.setAttribute("r", String(r));
+    c.setAttribute("class", cls);
+    if (cls === "ring-value") {
+      c.setAttribute("stroke-dasharray", String(length));
+      c.setAttribute("stroke-dashoffset", String(length * (1 - Math.min(1, done / goal))));
+    }
+    svg.append(c);
+  }
+  return h("div", { class: `goal-ring${done >= goal ? " met" : ""}` }, svg,
+    h("span", { class: "goal-num num" }, done >= goal ? icon("check") : done, h("small", {}, done >= goal ? "" : `/${goal}`)));
+}
+
+function todayCard() {
+  const done = todayCount();
+  const days = streak(stats.days);
+  const chip = (label, checked, onclick) =>
+    h("button", { class: "chip", type: "button", role: "radio", "aria-checked": String(checked), onclick }, label);
+  return h("section", { class: "card today", "aria-label": "Сегодня" },
+    h("div", { class: "today-main" },
+      goalRing(done, stats.goal),
+      h("div", { class: "today-text" },
+        h("b", {}, done >= stats.goal ? "Цель на сегодня выполнена" : "Цель на сегодня"),
+        h("span", { class: "num" }, `${done} из ${stats.goal} ${plural(stats.goal, "карточки", "карточек", "карточек")}`),
+        h("span", { class: `streak${done ? " lit" : ""}` }, lessonIcon("flame", "streak-icon"),
+          days ? streakText(days) : "Начните серию сегодня"),
+      ),
+    ),
+    h("div", { class: "today-options" },
+      h("div", { class: "option" }, h("span", { class: "option-label", id: "goalLabel" }, "Карточек в день"),
+        h("div", { class: "chips", role: "radiogroup", "aria-labelledby": "goalLabel" },
+          [5, 10, 20].map((n) => chip(n, stats.goal === n, () => { stats.goal = n; save("learnStats", stats); renderCourse(currentTrack); })))),
+      serverTts
+        ? h("div", { class: "option" }, h("span", { class: "option-label", id: "voiceLabel" }, "Голос"),
+            h("div", { class: "chips", role: "radiogroup", "aria-labelledby": "voiceLabel" },
+              [["female", "Женский"], ["male", "Мужской"]].map(([v, label]) => chip(label, voiceChoice === v, (e) => {
+                voiceChoice = v;
+                save("learnVoice", v);
+                renderCourse(currentTrack);
+                speak(v === "female" ? "Hi! I'll read the phrases for you." : "Hello! I'll read the phrases for you.");
+              }))))
+        : null,
+    ),
+  );
+}
+
+// A short burst of confetti for a met goal or a finished unit (skipped when motion is reduced).
+function confetti() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const canvas = h("canvas", { class: "confetti", "aria-hidden": "true" });
+  document.body.append(canvas);
+  const ctx = canvas.getContext("2d");
+  const dpr = devicePixelRatio || 1;
+  canvas.width = innerWidth * dpr;
+  canvas.height = innerHeight * dpr;
+  ctx.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement);
+  const colors = ["--accent", "--ok", "--say", "--miss", "--flame"].map((v) => css.getPropertyValue(v).trim());
+  const bits = Array.from({ length: 110 }, () => ({
+    x: innerWidth / 2 + (Math.random() - 0.5) * 80, y: innerHeight * 0.35,
+    vx: (Math.random() - 0.5) * 9, vy: -Math.random() * 9 - 3, size: 5 + Math.random() * 5,
+    spin: Math.random() * 6, color: colors[Math.floor(Math.random() * colors.length)],
+  }));
+  const startedAt = performance.now();
+  (function frame(now) {
+    const t = now - startedAt;
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    for (const b of bits) {
+      b.vy += 0.25; b.x += b.vx; b.y += b.vy; b.vx *= 0.99;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - t / 1800);
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.spin * t / 300);
+      ctx.fillStyle = b.color;
+      ctx.fillRect(-b.size / 2, -b.size / 4, b.size, b.size / 2);
+      ctx.restore();
+    }
+    if (t < 1800) requestAnimationFrame(frame);
+    else canvas.remove();
+  })(startedAt);
+}
+
 // ---------------------------------------------------------------- course data
 const ALL_PHRASES = LESSONS.flatMap((lesson) => lesson.phrases);
+const PHRASE_LESSON = new Map(LESSONS.flatMap((lesson) => lesson.phrases.map((p) => [p.en, lesson])));
 const levelOf = (lesson) => LEVELS.find((l) => l.id === lesson.level);
 const trackOf = (lesson) => levelOf(lesson).track;
 const trackLessons = (track) => LESSONS.filter((lesson) => trackOf(lesson) === track);
@@ -243,6 +448,7 @@ function renderCourse(track = currentTrack) {
       h("h1", {}, "Курс английского"),
       h("p", { class: "lede" }, `${LESSONS.length} ${plural(LESSONS.length, "урок", "урока", "уроков")} в трёх разделах. Каждая фраза — с переводом и произношением русскими буквами; её можно послушать и повторить вслух.`),
     ),
+    todayCard(),
     h("nav", { class: "tracks", "aria-label": "Разделы курса" },
       TRACKS.map((t) => h("a", { class: "track", href: `#${t.id}`, "aria-current": t.id === track ? "page" : null },
         lessonIcon(t.icon, "track-icon"), h("span", {}, t.title)))),
@@ -275,6 +481,7 @@ function renderCourse(track = currentTrack) {
                 h("span", { class: "unit-text" },
                   h("b", {}, lesson.title),
                   h("small", {}, `${UNIT_NO.get(lesson.id)} · ${lesson.en} · `, h("span", { class: "num" }, done ? "пройдено" : `${known} из ${lesson.phrases.length}`)),
+                  known && !done ? h("span", { class: "mini-meter" }, h("i", { style: `width: ${(known / lesson.phrases.length) * 100}%` })) : null,
                 ),
                 done ? h("span", { class: "unit-done", "aria-label": "Пройдено" }, icon("check")) : icon("next"),
               ),
@@ -369,7 +576,14 @@ function renderPractice(deck) {
   const understand = mode === "understand";
   document.title = `${deck.title} · Курс английского`;
 
+  prefetch(p.en);
+  prefetch(s.queue[s.index + 1]?.en);
   const english = [h("div", { class: "en-big", lang: "en" }, tappableWords(p.en)), p.say ? h("div", { class: "say", lang: "ru" }, p.say) : null];
+  const owner = PHRASE_LESSON.get(p.en);
+  const isNewCard = s.shownIndex !== s.index;
+  s.shownIndex = s.index;
+  const celebrate = s.celebrate;
+  s.celebrate = null;
   const front = understand
     ? english
     : [h("div", { class: "ru-big" }, p.ru), h("p", { class: "hint" }, "Как сказать это по-английски? Скажите вслух, затем проверьте.")];
@@ -393,23 +607,31 @@ function renderPractice(deck) {
       h("button", { type: "button", role: "radio", "aria-checked": String(understand), onclick: () => setMode("understand") }, "Понимать"),
       h("button", { type: "button", role: "radio", "aria-checked": String(!understand), onclick: () => setMode("speak") }, "Говорить"),
     ),
-    h("section", { class: "card flash", "aria-label": deck.title },
+    celebrate
+      ? h("div", { class: "celebrate", role: "status" }, lessonIcon("trophy", "celebrate-icon"),
+          h("span", {}, h("b", {}, "Цель на сегодня выполнена!"), ` ${streakText(streak(stats.days))}. Можно продолжать.`))
+      : null,
+    h("section", { class: `card flash${isNewCard ? " enter" : ""}`, "aria-label": deck.title },
+      h("div", { class: "flash-head" },
+        owner ? lessonIcon(owner.icon, "tile small") : h("span", { class: "tile small", "aria-hidden": "true" }, icon("film")),
+        h("span", {}, owner ? owner.title : deck.title),
+      ),
       h("div", { class: "front" }, front),
       s.revealed
         ? h("div", { class: "back" }, back)
         : h("button", { class: "btn reveal", type: "button", onclick: () => { s.revealed = true; renderPractice(deck); } }, understand ? "Показать перевод" : "Показать ответ"),
       h("div", { class: "tools" },
-        tts ? h("button", { class: "btn", type: "button", onclick: () => speak(p.en) }, icon("play"), "Слушать") : null,
-        tts ? h("button", { class: "btn", type: "button", onclick: () => speak(p.en, 0.6) }, icon("slow"), "Медленно") : null,
+        canPlay() ? h("button", { class: "btn", type: "button", onclick: (e) => speak(p.en, 1, e.currentTarget) }, icon("play"), "Слушать") : null,
+        canPlay() ? h("button", { class: "btn", type: "button", onclick: (e) => speak(p.en, 0.7, e.currentTarget) }, icon("slow"), "Медленно") : null,
         h("button", { class: "btn", type: "button", id: "sayBtn", "data-needs-app": "", hidden: !Recognizer, onclick: () => checkSpeech(p) }, icon("mic"), "Сказать"),
       ),
       feedbackBlock(s.feedback),
     ),
     h("div", { class: "grade" },
-      h("button", { class: "btn", type: "button", onclick: () => gradeCard(false) }, "Ещё раз"),
-      h("button", { class: "btn primary", type: "button", onclick: () => gradeCard(true) }, "Знаю"),
+      h("button", { class: "btn", type: "button", onclick: () => gradeCard(false) }, icon("repeat"), "Ещё раз"),
+      h("button", { class: "btn primary", type: "button", onclick: () => gradeCard(true) }, icon("check"), "Знаю"),
     ),
-    h("p", { class: "tip" }, tts ? "Нажмите на английское слово, чтобы услышать его отдельно." : "Озвучка недоступна в этом браузере."),
+    h("p", { class: "tip" }, canPlay() ? "Нажмите на английское слово, чтобы услышать его отдельно." : "Озвучка недоступна в этом браузере."),
   );
 }
 
@@ -465,26 +687,34 @@ function gradeCard(knew) {
     s.again++;
     s.queue.splice(Math.min(s.index + 3, s.queue.length), 0, p); // comes back in a few cards
   }
+  if (countCard()) s.celebrate = true;
   s.index++;
   s.revealed = false;
   s.feedback = null;
-  tts?.cancel();
+  stopSound();
   renderPractice(s.deck);
+  if (s.celebrate && s.index < s.queue.length) confetti();
 }
 
 function renderDone() {
   const { deck, knew, again } = session;
   const lesson = deck.lesson;
   const done = lesson && unitDone(lesson);
+  if (!session.celebrated) { session.celebrated = true; confetti(); }
   const siblings = lesson ? trackLessons(trackOf(lesson)) : [];
   const next = lesson && siblings[siblings.indexOf(lesson) + 1];
   const courseHash = lesson ? `#${trackOf(lesson)}` : `#${currentTrack}`;
   view.replaceChildren(
     h("div", { class: "nav" }, backLink(courseHash, "Курс")),
     h("section", { class: "card done-card" },
-      h("span", { class: "done-mark" }, icon("check")),
+      done ? lessonIcon("trophy", "done-mark") : h("span", { class: "done-mark" }, icon("check")),
       h("h1", {}, done ? `Урок ${UNIT_NO.get(lesson.id)} пройден` : "Готово"),
-      h("p", { class: "lede" }, `Знаю: ${knew}. Повторили: ${again}. ${done ? "Фразы вернутся на повторение через день, потом через 3 дня, неделю и дольше." : "Пройдите урок ещё раз, чтобы закрепить все фразы."}`),
+      h("div", { class: "done-stats" },
+        h("span", {}, h("b", { class: "num" }, knew), "знаю"),
+        h("span", {}, h("b", { class: "num" }, again), "повторили"),
+        h("span", {}, h("b", { class: "num" }, streak(stats.days)), plural(streak(stats.days), "день подряд", "дня подряд", "дней подряд")),
+      ),
+      h("p", { class: "lede" }, done ? "Фразы вернутся на повторение через день, потом через 3 дня, неделю и дольше." : "Пройдите урок ещё раз, чтобы закрепить все фразы."),
     ),
     h("div", { class: "btn-row" },
       next && done ? h("a", { class: "btn primary", href: `#unit-${next.id}` }, `Урок ${UNIT_NO.get(next.id)}: ${next.title}`, icon("next")) : null,
@@ -497,7 +727,7 @@ function renderDone() {
 // ---------------------------------------------------------------- navigation (#unit-cafe, #practice-cafe)
 function route() {
   attempt?.cancel();
-  tts?.cancel();
+  stopSound();
   const hash = location.hash.slice(1);
   if (hash.startsWith("unit-")) {
     const lesson = LESSONS.find((l) => l.id === hash.slice(5));

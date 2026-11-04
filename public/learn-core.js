@@ -80,6 +80,28 @@ export function verdict(score) {
   return "Ещё разок: послушайте медленно и повторите.";
 }
 
+/** "2026-11-04": a calendar day in the phone's own time zone. */
+export function dayKey(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * Days in a row with practice, counting back from today, or from yesterday when today's
+ * practice hasn't started yet (the streak isn't lost until the day is over).
+ * @param {Record<string, number>} days cards practised per dayKey
+ */
+export function streak(days, today = new Date()) {
+  const d = new Date(today);
+  if (!days[dayKey(d)]) d.setDate(d.getDate() - 1);
+  let count = 0;
+  while (days[dayKey(d)]) {
+    count++;
+    d.setDate(d.getDate() - 1);
+  }
+  return count;
+}
+
 const DAY = 24 * 60 * 60 * 1000;
 /** Days until a phrase comes back, by box. "Знаю" moves it up a box; "Ещё раз" back to the first. */
 export const INTERVALS = [0, 1, 3, 7, 14, 30];

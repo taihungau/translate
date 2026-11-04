@@ -3,7 +3,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleTranslate, handleSpeechToken, speechConfig } from "../lib/handler.js";
+import { handleTranslate, handleSpeechToken, handleTts, speechConfig } from "../lib/handler.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(here, "..", "public");
@@ -66,6 +66,13 @@ const server = http.createServer((req, res) => {
     return handleSpeechToken(req.headers["x-access-code"]).then(({ status, body }) => sendJson(res, status, body));
   }
   if (req.method === "GET" && req.url === "/api/config") return sendJson(res, 200, speechConfig());
+  if (req.method === "GET" && req.url.startsWith("/api/tts?")) {
+    const q = new URL(req.url, "http://x").searchParams;
+    return handleTts(q.get("text"), q.get("voice") ?? undefined, q.get("code") ?? req.headers["x-access-code"]).then((r) => {
+      if (r.status !== 200) return sendJson(res, r.status, r.body);
+      res.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "public, max-age=31536000, immutable" }).end(r.audio);
+    });
+  }
   if (req.method === "GET" || req.method === "HEAD") return serveStatic(req, res);
   res.writeHead(405).end();
 });
