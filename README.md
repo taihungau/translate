@@ -63,6 +63,17 @@ its own icon.
   small celebration when the goal is met or a unit is finished.
 - **Speaking check:** she says the phrase, Deepgram writes down what it heard, and the missed words
   are marked in red with a score.
+- **Written test** at the end of every unit (`#test-<unit>`): the unit's phrases in Russian, in a
+  new order, typed in English and marked like a written test. Case, punctuation and contractions
+  ("I'm" = "I am") don't matter, but every word must be there and nothing extra. Wrong or extra
+  words are struck out, missing ones shown in the right answer, a word one letter off is pointed
+  out ("work → works"), and "Мой ответ тоже верный" accepts another correct wording. Results feed
+  spaced repetition and the daily goal; the best score per unit is kept; mistakes can be practised
+  as cards. A Russian keyboard is noticed and she is asked to switch.
+- **Her own sentences:** after the test she can write sentences of her own on the unit's topic.
+  `POST /api/check-writing` has Claude mark each one (correct / almost / wrong), rewrite it as an
+  American would and explain the rule in Russian. This part appears only when `ANTHROPIC_API_KEY`
+  is set on the server.
 - **Spaced repetition:** a known phrase comes back after 1, 3, 7, 14 and 30 days; a forgotten one
   comes back in a few cards. **"Из фильмов"** reviews phrases heard in live subtitles.
 - Progress stays on the device (browser storage).
@@ -72,7 +83,9 @@ its own icon.
 ## Appearance
 
 Colours are Apple's system colours (iOS Human Interface Guidelines) in light and dark; coloured
-text on light backgrounds uses Apple's high-contrast variants.
+text on light backgrounds uses Apple's high-contrast variants. The course's buttons follow Apple's
+button styles: filled systemBlue for the main action, gray fill with blue text for the rest, iOS
+segmented controls for choices (goal, voice, speed, mode, track), and buttons dim when pressed.
 
 Settings → Appearance: Automatic (follows the phone), Light or Dark. Full-screen (cinema) mode is
 always dark so the screen doesn't light up the room. The course uses the same setting.
@@ -140,6 +153,8 @@ npm start
 | `ANTHROPIC_API_KEY` | none (required)   | Anthropic credentials, kept on the server only              |
 | `TRANSLATE_MODEL`   | `claude-opus-5-5` | Model used for translation                                  |
 | `TRANSLATE_EFFORT`  | `low`             | `low` gives the lowest latency; raise it for higher quality |
+| `WRITING_MODEL`     | `claude-opus-5-5` | Model that checks sentences written in the course           |
+| `WRITING_EFFORT`    | `low`             | Effort for that check                                       |
 | `DEEPGRAM_API_KEY`  | none              | Live speech recognition with Deepgram Nova-3 (any device)    |
 | `PORT`              | `3000`            | HTTP port                                                   |
 

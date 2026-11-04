@@ -16,6 +16,9 @@
     },
     "api/tts.js": {
       "maxDuration": 15
+    },
+    "api/check-writing.js": {
+      "maxDuration": 30
     }
   }
 }

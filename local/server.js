@@ -3,7 +3,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleTranslate, handleSpeechToken, handleTts, speechConfig } from "../lib/handler.js";
+import { handleTranslate, handleSpeechToken, handleTts, handleCheckWriting, speechConfig } from "../lib/handler.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(here, "..", "public");
@@ -33,14 +33,14 @@ async function readJson(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-async function handleTranslateRequest(req, res) {
+async function handleJsonRequest(req, res, handle) {
   let body;
   try {
     body = await readJson(req);
   } catch (err) {
     return sendJson(res, err.status || 400, { error: err.status ? err.message : "Invalid JSON" });
   }
-  const result = await handleTranslate(body, req.headers["x-access-code"]);
+  const result = await handle(body, req.headers["x-access-code"]);
   sendJson(res, result.status, result.body);
 }
 
@@ -61,7 +61,8 @@ async function serveStatic(req, res) {
 }
 
 const server = http.createServer((req, res) => {
-  if (req.method === "POST" && req.url === "/api/translate") return handleTranslateRequest(req, res);
+  if (req.method === "POST" && req.url === "/api/translate") return handleJsonRequest(req, res, handleTranslate);
+  if (req.method === "POST" && req.url === "/api/check-writing") return handleJsonRequest(req, res, handleCheckWriting);
   if (req.method === "POST" && req.url === "/api/speech-token") {
     return handleSpeechToken(req.headers["x-access-code"]).then(({ status, body }) => sendJson(res, status, body));
   }

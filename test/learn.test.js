@@ -4,7 +4,7 @@ import { dictionary } from "cmu-pronouncing-dictionary"; // the same version pro
 import { enToCyrillic } from "../public/pronounce.js";
 import { readFileSync } from "node:fs";
 import { TRACKS, LEVELS, LESSONS } from "../public/lessons.js";
-import { compareSpeech, tokens, grade, isLearned, isDue, INTERVALS, dayKey, streak } from "../public/learn-core.js";
+import { compareSpeech, checkWriting, oneLetterOff, testQuestions, tokens, grade, isLearned, isDue, INTERVALS, dayKey, streak } from "../public/learn-core.js";
 
 const marks = (r) => r.words.map((w) => (w.ok ? w.word : `[${w.word}]`)).join(" ");
 
@@ -61,6 +61,50 @@ test("contractions, digits and sound-alike words count as the same", () => {
   assert.equal(compareSpeech("I'm twenty-five years old.", "I'm 25 years old").score, 1);
   assert.equal(compareSpeech("It's ten o'clock.", "it's 10 o'clock").score, 1);
   assert.deepEqual(tokens("What’s up?"), ["what", "is", "up"]);
+});
+
+test("a written answer must have every word and nothing extra; case and punctuation don't matter", () => {
+  const right = (typed, answer = "Can I have a coffee, please?") => checkWriting(answer, typed).correct;
+  assert.ok(right("can i have a coffee please"));
+  assert.ok(right("Can I have a coffee, please?!"));
+  assert.ok(right("I am fine thanks", "I'm fine, thanks."), "contractions");
+  assert.ok(right("I don’t know", "I do not know."), "curly apostrophe");
+  assert.ok(!right("Can I have coffee, please?"), "a missing article is a mistake");
+  assert.ok(!right("Can I have a coffee, please, now?"), "an extra word is a mistake");
+  assert.ok(!right(""));
+  assert.ok(!right("   —  "));
+
+  const r = checkWriting("He works in a bank.", "He work in bank");
+  assert.deepEqual(r.answer.map((w) => [w.word, w.ok]), [["He", true], ["works", false], ["in", true], ["a", false], ["bank.", true]]);
+  assert.deepEqual(r.fixes, [{ typed: "work", right: "works" }], "one letter off is pointed out, still a mistake");
+  assert.ok(!r.correct);
+  assert.equal(r.score, (2 * 3) / (5 + 4));
+
+  const extra = checkWriting("I went to the cinema.", "I go to the cinema very");
+  assert.deepEqual(extra.typed.filter((w) => !w.ok).map((w) => w.word), ["go", "very"]);
+  assert.deepEqual(extra.fixes, [], "go → went is not a typo");
+});
+
+test("one letter off: added, missing, changed or two swapped, in words of three letters or more", () => {
+  assert.ok(oneLetterOff("cofee", "coffee"));
+  assert.ok(oneLetterOff("work", "works"));
+  assert.ok(oneLetterOff("form", "from"));
+  assert.ok(oneLetterOff("teh", "the"));
+  assert.ok(oneLetterOff("whit", "with") === false);
+  assert.ok(!oneLetterOff("is", "it"), "too short to tell");
+  assert.ok(!oneLetterOff("go", "went"));
+  assert.ok(!oneLetterOff("same", "same"));
+});
+
+test("a test asks the lesson's phrases in a new order, each once", () => {
+  const phrases = LESSONS[0].phrases;
+  let seed = 1;
+  const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const asked = testQuestions(phrases, 6, random);
+  assert.equal(asked.length, Math.min(6, phrases.length));
+  assert.equal(new Set(asked).size, asked.length);
+  assert.ok(asked.every((p) => phrases.includes(p)));
+  assert.equal(testQuestions(phrases, 100).length, phrases.length);
 });
 
 test("spaced repetition: known phrases come back later, forgotten ones right away", () => {

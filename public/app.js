@@ -527,7 +527,7 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
     .catch((err) => ({ error: err.message }))
     .then((cfg) => {
       useCloud = Boolean(cfg.cloudSpeech);
-      $("appVersion").textContent = useCloud ? "v8 · Deepgram Nova-3" : "v8 · on-device Whisper (no Deepgram key)";
+      $("appVersion").textContent = useCloud ? "v9 · Deepgram Nova-3" : "v9 · on-device Whisper (no Deepgram key)";
       if (useCloud) {
         setStatus("Ready. Press Start.");
       } else if (cfg.error) {

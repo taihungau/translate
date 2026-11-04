@@ -1,5 +1,5 @@
-// The Learn page's logic that doesn't touch the screen: checking what was said against the
-// phrase, and when a phrase should come back (spaced repetition, like paper flashcards in boxes).
+// The Learn page's logic that doesn't touch the screen: checking what was said or written against
+// the phrase, and when a phrase should come back (spaced repetition, like paper flashcards in boxes).
 
 const NUMBERS = [
   "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
@@ -38,18 +38,8 @@ export function tokens(text) {
   return String(text ?? "").split(/\s+/).flatMap(expand);
 }
 
-/**
- * How well `heard` (what speech recognition wrote) matches `phrase`: each word of the phrase
- * marked as said or missed, and the share of the phrase's words that were said, in order.
- * @returns {{words: {word: string, ok: boolean}[], score: number}}
- */
-export function compareSpeech(phrase, heard) {
-  const display = phrase.split(/\s+/).filter(Boolean);
-  const parts = display.map(expand);
-  const want = parts.flat();
-  const got = tokens(heard);
-
-  // Longest common subsequence: the most phrase words said in the right order.
+// Longest common subsequence of two word lists: which words of each are matched, in order.
+function matchInOrder(want, got) {
   const n = want.length;
   const m = got.length;
   const lcs = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
@@ -58,20 +48,105 @@ export function compareSpeech(phrase, heard) {
       lcs[i][j] = want[i] === got[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
     }
   }
-  const hit = new Array(n).fill(false);
+  const hitWant = new Array(n).fill(false);
+  const hitGot = new Array(m).fill(false);
   for (let i = 0, j = 0; i < n && j < m; ) {
-    if (want[i] === got[j]) { hit[i] = true; i++; j++; }
+    if (want[i] === got[j]) { hitWant[i] = hitGot[j] = true; i++; j++; }
     else if (lcs[i + 1][j] >= lcs[i][j + 1]) i++;
     else j++;
   }
+  return { hitWant, hitGot };
+}
 
+// The words as written, each with its comparable tokens ("I'm" → ["i", "am"]).
+const wordsOf = (text) => String(text ?? "").split(/\s+/).filter(Boolean).map((word) => ({ word, toks: expand(word) }));
+
+// Marks each written word as matched when all of its tokens were.
+function markWords(words, hits) {
   let k = 0;
-  const words = display.map((word, d) => {
+  return words.map(({ word, toks }) => {
     let ok = true;
-    for (let t = 0; t < parts[d].length; t++) ok = hit[k++] && ok;
+    for (let t = 0; t < toks.length; t++) ok = hits[k++] && ok;
     return { word, ok };
   });
-  return { words, score: n ? hit.filter(Boolean).length / n : 0 };
+}
+
+/**
+ * How well `heard` (what speech recognition wrote) matches `phrase`: each word of the phrase
+ * marked as said or missed, and the share of the phrase's words that were said, in order.
+ * @returns {{words: {word: string, ok: boolean}[], score: number}}
+ */
+export function compareSpeech(phrase, heard) {
+  const parts = wordsOf(phrase);
+  const want = parts.flatMap((p) => p.toks);
+  const { hitWant } = matchInOrder(want, tokens(heard));
+  return { words: markWords(parts, hitWant), score: want.length ? hitWant.filter(Boolean).length / want.length : 0 };
+}
+
+// One letter added, missing, changed or two swapped: "cofee" for "coffee", "work" for "works".
+export function oneLetterOff(a, b) {
+  if (a === b || Math.min(a.length, b.length) < 3 || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  if (a.length === b.length) {
+    if (a.slice(i + 1) === b.slice(i + 1)) return true; // one changed
+    return a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2); // two swapped
+  }
+  const [long, short] = a.length > b.length ? [a, b] : [b, a];
+  return long.slice(i + 1) === short.slice(i);
+}
+
+/**
+ * Checks a typed answer against the right one, as a teacher marks a written test: case and
+ * punctuation don't matter, "I'm" and "I am" are the same, but every word must be there and
+ * nothing extra. A word one letter off ("work" for "works") is pointed out with its fix, and it
+ * still counts as a mistake: in grammar lessons that letter is often the point.
+ * @returns {{correct: boolean, score: number, answer: {word: string, ok: boolean, near?: boolean}[],
+ *   typed: {word: string, ok: boolean, near?: boolean}[], fixes: {typed: string, right: string}[]}}
+ */
+export function checkWriting(answer, typed) {
+  const want = wordsOf(answer);
+  const got = wordsOf(typed).filter((w) => w.toks.length); // a lone "-" or "?" is not a word
+  const a = want.flatMap((w) => w.toks);
+  const b = got.flatMap((w) => w.toks);
+  const { hitWant, hitGot } = matchInOrder(a, b);
+  const answerWords = markWords(want, hitWant);
+  const typedWords = markWords(got, hitGot);
+
+  // Pair each missed word with a written word one letter off, keeping the order.
+  const fixes = [];
+  const plain = (w) => w.toLowerCase().replace(/’/g, "'").replace(/[^a-z0-9']/g, "");
+  let from = 0;
+  for (const right of answerWords) {
+    if (right.ok) continue;
+    for (let t = from; t < typedWords.length; t++) {
+      const wrong = typedWords[t];
+      if (wrong.ok || !oneLetterOff(plain(wrong.word), plain(right.word))) continue;
+      right.near = wrong.near = true;
+      fixes.push({ typed: wrong.word.replace(/[^\p{L}\p{N}'’-]/gu, ""), right: right.word.replace(/[^\p{L}\p{N}'’-]/gu, "") });
+      from = t + 1;
+      break;
+    }
+  }
+
+  const hits = hitWant.filter(Boolean).length;
+  return {
+    correct: a.length > 0 && hits === a.length && hits === b.length,
+    score: a.length + b.length ? (2 * hits) / (a.length + b.length) : 0,
+    answer: answerWords,
+    typed: typedWords,
+    fixes,
+  };
+}
+
+/** Phrases for a written test: the lesson's phrases in a new order, at most `size` of them. */
+export function testQuestions(phrases, size = 8, random = Math.random) {
+  const pool = phrases.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, size);
 }
 
 export function verdict(score) {

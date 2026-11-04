@@ -1,9 +1,9 @@
 // The Learn page: an English course for a Russian speaker. Course → unit (goal, grammar,
-// phrases) → practice cards, with a daily goal and a streak. In the subtitles app, phrases are
-// read aloud by Deepgram's American voices and the speaking check listens with the same speech
-// recognition as live subtitles.
+// phrases) → practice cards → a written test, with a daily goal and a streak. In the subtitles
+// app, phrases are read aloud by Deepgram's American voices, the speaking check listens with the
+// same speech recognition as live subtitles, and sentences she writes herself are checked by Claude.
 import { TRACKS, LEVELS, LESSONS } from "./lessons.js";
-import { compareSpeech, grade, isLearned, isDue, verdict, dayKey, streak } from "./learn-core.js";
+import { compareSpeech, checkWriting, testQuestions, grade, isLearned, isDue, verdict, dayKey, streak } from "./learn-core.js";
 
 const APP_URL = "https://translate-hyperlinks-projects.vercel.app/";
 const view = document.getElementById("view");
@@ -32,6 +32,7 @@ function save(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage full or blocked */ }
 }
 const progress = load("learnProgress", {}); // English phrase → { box, due }
+const tests = load("learnTests", {}); // lesson id → { best, last, total, at }: written test results
 let mode = load("learnMode", "understand"); // "understand": English → Russian; "speak": Russian → English
 
 // ---------------------------------------------------------------- building the page
@@ -112,8 +113,7 @@ function download(text) {
   if (!serverTts) return null;
   const key = `${voiceChoice}|${text}`;
   if (!downloads.has(key)) {
-    let code = "";
-    try { code = localStorage.getItem("accessCode") || ""; } catch { /* storage blocked */ }
+    const code = accessCode();
     const query = new URLSearchParams({ text, voice: voiceChoice, ...(code ? { code } : {}) });
     const entry = { url: null };
     entry.promise = fetch(`api/tts?${query}`)
@@ -245,6 +245,7 @@ function tappableWords(text) {
 let inApp = false;
 let Recognizer = null;
 let pronounceEnglish = null;
+let writingCheck = false; // the server can check sentences she writes herself
 
 async function detectApp() {
   try {
@@ -252,6 +253,7 @@ async function detectApp() {
     const config = await res.json();
     inApp = true;
     serverTts = Boolean(config.tts);
+    writingCheck = Boolean(config.writing);
     if (config.cloudSpeech) ({ CloudRecognizer: Recognizer } = await import("./cloud-asr.js"));
     if (load("heardPhrases", []).length) {
       const { pronounce, loadDictionary } = await import("./pronounce.js");
@@ -261,7 +263,9 @@ async function detectApp() {
   } catch {
     return; // not served by the app
   }
-  // Show what just became available, without restarting a practice session in progress.
+  // Show what just became available, without restarting a practice session or losing an answer
+  // being typed.
+  if (testRun && testRun.index < testRun.questions.length) return showFoot();
   if (!session) route();
   else {
     for (const el of document.querySelectorAll("[data-needs-app]")) el.hidden = false;
@@ -279,9 +283,7 @@ function showFoot() {
 }
 
 async function speechToken() {
-  let code = "";
-  try { code = localStorage.getItem("accessCode") || ""; } catch { /* storage blocked */ }
-  const res = await fetch("api/speech-token", { method: "POST", headers: { "X-Access-Code": code } });
+  const res = await fetch("api/speech-token", { method: "POST", headers: { "X-Access-Code": accessCode() } });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) throw new Error("Нужен код доступа: откройте субтитры и введите его.");
   if (!res.ok || !data.token) throw new Error(data.error || "Не удалось включить распознавание речи.");
@@ -470,6 +472,7 @@ function deckFor(id) {
     return { id, title: "Повторение", back: `#${currentTrack}`, phrases: due.slice(0, 30) };
   }
   if (id === "films") return { id, title: "Фразы из фильмов", back: "#daily", phrases: filmPhrases().slice(0, 40) };
+  if (id === "mistakes") return mistakesDeck;
   const lesson = LESSONS.find((l) => l.id === id);
   return lesson && { id, title: lesson.title, back: `#unit-${id}`, phrases: lesson.phrases, lesson };
 }
@@ -531,7 +534,7 @@ function renderCourse(track = currentTrack) {
                 lessonIcon(lesson.icon),
                 h("span", { class: "unit-text" },
                   h("b", {}, lesson.title),
-                  h("small", {}, `${UNIT_NO.get(lesson.id)} · ${lesson.en} · `, h("span", { class: "num" }, done ? "пройдено" : `${known} из ${lesson.phrases.length}`)),
+                  h("small", {}, `${UNIT_NO.get(lesson.id)} · ${lesson.en} · `, h("span", { class: "num" }, done ? "пройдено" : `${known} из ${lesson.phrases.length}`, testNote(lesson) ? ` · ${testNote(lesson)}` : null)),
                   known && !done ? h("span", { class: "mini-meter" }, h("i", { style: `width: ${(known / lesson.phrases.length) * 100}%` })) : null,
                 ),
                 done ? h("span", { class: "unit-done", "aria-label": "Пройдено" }, icon("check")) : icon("next"),
@@ -695,7 +698,11 @@ function renderUnit(lesson) {
         canPlay() ? speedChips() : null),
       h("ol", { class: "phrase-list" }, lesson.phrases.map((p) => h("li", {}, playButton(p.en), line(p.en, p.say, p.ru)))),
     ),
-    h("a", { class: "btn primary wide", href: `#practice-${lesson.id}` }, "Начать практику", icon("next")),
+    h("div", { class: "btn-stack" },
+      h("a", { class: "btn primary wide", href: `#practice-${lesson.id}` }, "Начать практику", icon("next")),
+      h("a", { class: "btn wide", href: `#test-${lesson.id}` }, icon("pencil-line", "u"),
+        tests[lesson.id] ? `Тест · лучший результат ${tests[lesson.id].best} из ${tests[lesson.id].total}` : "Тест: напишите фразы сами"),
+    ),
   );
 }
 
@@ -737,13 +744,13 @@ function renderPractice(deck) {
 
   setView(
     h("div", { class: "nav" },
-      backLink(deck.back, deck.lesson ? "Урок" : "Курс"),
+      backLink(deck.back, deck.backText ?? (deck.lesson ? "Урок" : "Курс")),
       h("span", { class: "count num" }, `${Math.min(s.index + 1, s.queue.length)} из ${s.queue.length}`),
     ),
     h("div", { class: "meter" }, h("i", { style: `width: ${(s.index / s.queue.length) * 100}%` })),
-    h("div", { class: "modes", role: "radiogroup", "aria-label": "Режим" },
-      h("button", { type: "button", role: "radio", "aria-checked": String(understand), onclick: () => setMode("understand") }, "Понимать"),
-      h("button", { type: "button", role: "radio", "aria-checked": String(!understand), onclick: () => setMode("speak") }, "Говорить"),
+    h("div", { class: "chips modes", role: "radiogroup", "aria-label": "Режим" },
+      h("button", { class: "chip", type: "button", role: "radio", "aria-checked": String(understand), onclick: () => setMode("understand") }, "Понимать"),
+      h("button", { class: "chip", type: "button", role: "radio", "aria-checked": String(!understand), onclick: () => setMode("speak") }, "Говорить"),
     ),
     celebrate
       ? h("div", { class: "celebrate", role: "status" }, lessonIcon("trophy", "celebrate-icon"),
@@ -854,19 +861,319 @@ function renderDone() {
       ),
       h("p", { class: "lede" }, done ? "Фразы вернутся на повторение через день, потом через 3 дня, неделю и дольше." : "Пройдите урок ещё раз, чтобы закрепить все фразы."),
     ),
-    h("div", { class: "btn-row" },
-      next && done ? h("a", { class: "btn primary", href: `#unit-${next.id}` }, `Урок ${UNIT_NO.get(next.id)}: ${next.title}`, icon("next")) : null,
+    lesson && !tests[lesson.id] ? h("p", { class: "done-next" }, "Теперь проверьте себя: напишите фразы урока по-английски.") : null,
+    h("div", { class: "btn-stack" },
+      lesson && (!tests[lesson.id] || !done || !next)
+        ? h("a", { class: "btn primary", href: `#test-${lesson.id}` }, icon("pencil-line", "u"), tests[lesson.id] ? "Тест ещё раз" : "Пройти тест")
+        : null,
+      next && done ? h("a", { class: `btn${!tests[lesson.id] ? "" : " primary"}`, href: `#unit-${next.id}` }, `Урок ${UNIT_NO.get(next.id)}: ${next.title}`, icon("next")) : null,
+      lesson && tests[lesson.id] && done && next ? h("a", { class: "btn", href: `#test-${lesson.id}` }, icon("pencil-line", "u"), "Тест ещё раз") : null,
       h("button", { class: "btn", type: "button", onclick: () => { startSession(deckFor(deck.id) ?? deck); renderPractice(session.deck); } }, icon("repeat"), "Ещё раз"),
       h("a", { class: "btn", href: courseHash }, "К курсу"),
     ),
   );
 }
 
-// ---------------------------------------------------------------- navigation (#unit-cafe, #practice-cafe)
+// ---------------------------------------------------------------- written test (#test-cafe)
+// The lesson's phrases in Russian, in a new order: she types each in English and it is marked
+// like a written test. Then she can write sentences of her own, which Claude checks.
+const TEST_SIZE = 8;
+let testRun = null; // { lesson, questions, index, answers: [{ typed, result, accepted, before }], own: [] }
+let mistakesDeck = null; // the test's mistakes, to practise as cards
+
+function startTest(lesson) {
+  testRun = { lesson, questions: testQuestions(lesson.phrases, TEST_SIZE), index: 0, answers: [], draft: "", own: [], ownDraft: "" };
+}
+const isRight = (a) => a.result.correct || a.accepted;
+const testScore = (run) => run.answers.filter(isRight).length;
+const testNote = (lesson) => tests[lesson.id] && `тест ${tests[lesson.id].best} из ${tests[lesson.id].total}`;
+
+function accessCode() {
+  try { return localStorage.getItem("accessCode") || ""; } catch { return ""; }
+}
+
+// Her answer and the right one, word by word: wrong or extra words struck out in hers, the
+// words she left out marked in the right one, and a word one letter off shown with its fix.
+function markedAnswer(words, cls) {
+  return h("span", { class: `marked ${cls}`, lang: "en" },
+    words.flatMap((w, i) => [i ? " " : "", h("span", { class: w.ok ? null : w.near ? "near" : "x" }, w.word)]));
+}
+
+function checkBlock(q, a) {
+  const { result } = a;
+  const right = isRight(a);
+  const state = right ? "good" : result.score >= 0.6 ? "almost" : "bad";
+  const title = a.accepted ? "Засчитано" : result.correct ? "Верно!" : state === "almost" ? "Почти" : a.typed.trim() ? "Неверно" : "Правильный ответ";
+  return h("div", { class: `check ${state}`, role: "status" },
+    h("span", { class: "verdict" }, right ? icon("check") : null, title),
+    a.typed.trim() && !result.correct
+      ? h("div", { class: "check-row" }, h("span", { class: "label" }, "Ваш ответ"), markedAnswer(result.typed, "typed"))
+      : null,
+    h("div", { class: "check-row" },
+      result.correct ? null : h("span", { class: "label" }, "Правильно"),
+      h("div", { class: "answer-line" }, playButton(q.en), h("span", { class: "line-text" },
+        result.correct ? h("span", { class: "en", lang: "en" }, q.en) : markedAnswer(result.answer, "right"),
+        q.say ? h("span", { class: "say", lang: "ru" }, q.say) : null)),
+    ),
+    result.fixes.length && !result.correct
+      ? h("p", { class: "fixes" }, "Проверьте написание: ", result.fixes.flatMap((f, i) => [i ? ", " : "", h("span", { lang: "en" }, h("s", {}, f.typed), " → ", h("b", {}, f.right))]))
+      : null,
+    !right && a.typed.trim()
+      ? h("button", { class: "btn small", type: "button", onclick: () => acceptAnswer() }, "Мой ответ тоже верный")
+      : null,
+  );
+}
+
+function renderTest(lesson) {
+  if (testRun?.lesson !== lesson) startTest(lesson);
+  const t = testRun;
+  if (t.index >= t.questions.length) return renderTestResults();
+  const q = t.questions[t.index];
+  const a = t.answers[t.index];
+  const isNewCard = t.shownIndex !== t.index;
+  t.shownIndex = t.index;
+  const celebrate = t.celebrate;
+  t.celebrate = null;
+  document.title = `Тест · ${lesson.title} · Курс английского`;
+  prefetch(q.en);
+
+  const field = h("textarea", {
+    class: "answer", id: "answer", lang: "en", rows: "3", "aria-label": "Ваш ответ по-английски",
+    placeholder: "Напишите по-английски", autocomplete: "off", autocorrect: "off", autocapitalize: "sentences",
+    spellcheck: "false", enterkeyhint: "done",
+    oninput: (e) => { t.draft = e.target.value; e.target.classList.remove("cyrillic"); document.getElementById("keyboardHint")?.remove(); },
+    onkeydown: (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); checkAnswer(); } },
+  });
+  field.value = t.draft;
+
+  setView(
+    h("div", { class: "nav" },
+      backLink(`#unit-${lesson.id}`, "Урок"),
+      h("span", { class: "count num" }, `${t.index + 1} из ${t.questions.length}`),
+    ),
+    h("div", { class: "meter" }, h("i", { style: `width: ${(t.answers.length / t.questions.length) * 100}%` })),
+    celebrate
+      ? h("div", { class: "celebrate", role: "status" }, lessonIcon("trophy", "celebrate-icon"),
+          h("span", {}, h("b", {}, "Цель на сегодня выполнена!"), ` ${streakText(streak(stats.days))}.`))
+      : null,
+    h("section", { class: `card flash test${isNewCard ? " enter" : ""}`, "aria-label": `Тест: ${lesson.title}` },
+      h("div", { class: "flash-head" }, lessonIcon(lesson.icon, "tile small"), h("span", {}, `Тест · ${lesson.title}`)),
+      h("div", { class: "front" },
+        h("p", { class: "hint" }, "Как это сказать по-английски?"),
+        h("div", { class: "ru-big" }, q.ru),
+      ),
+      a ? checkBlock(q, a) : field,
+    ),
+    a
+      ? h("button", { class: "btn primary wide", type: "button", id: "nextBtn", onclick: () => nextQuestion() },
+          t.index + 1 < t.questions.length ? "Дальше" : "Результаты", icon("next"))
+      : h("div", { class: "grade" },
+          h("button", { class: "btn", type: "button", onclick: () => checkAnswer(true) }, "Не знаю"),
+          h("button", { class: "btn primary", type: "button", onclick: () => checkAnswer() }, icon("check"), "Проверить")),
+    h("p", { class: "tip" }, "Заглавные буквы и знаки препинания не важны; I'm и I\u00a0am — одно и то же."),
+  );
+  // After checking, Enter goes on to the next phrase; on a phone the keyboard closes to show the marks.
+  if (a) document.getElementById("nextBtn")?.focus({ preventScroll: true });
+  else if (matchMedia("(hover: hover)").matches) field.focus({ preventScroll: true });
+}
+
+function checkAnswer(giveUp = false) {
+  const t = testRun;
+  const q = t.questions[t.index];
+  const typed = giveUp ? "" : (document.getElementById("answer")?.value ?? t.draft);
+  if (!giveUp && !typed.trim()) return document.getElementById("answer")?.focus();
+  // Typed with the Russian keyboard: say so instead of marking it wrong.
+  if (!giveUp && /[а-яё]/i.test(typed)) {
+    const field = document.getElementById("answer");
+    field.classList.add("cyrillic");
+    if (!document.getElementById("keyboardHint")) {
+      field.after(h("p", { class: "keyboard-hint", id: "keyboardHint", role: "alert" }, "Похоже, включена русская клавиатура. Переключите её на английскую (кнопка с глобусом) и напишите ответ латиницей."));
+    }
+    return field.focus();
+  }
+  const result = checkWriting(q.en, typed);
+  const before = progress[q.en];
+  t.answers[t.index] = { typed, result, accepted: false, before };
+  progress[q.en] = grade(before, result.correct);
+  save("learnProgress", progress);
+  if (countCard()) { t.celebrate = true; confetti(); }
+  t.shownIndex = t.index; // same card, now marked
+  renderTest(t.lesson);
+}
+
+// "My answer is right too": another correct way to say it.
+function acceptAnswer() {
+  const t = testRun;
+  const a = t.answers[t.index];
+  a.accepted = true;
+  progress[t.questions[t.index].en] = grade(a.before, true);
+  save("learnProgress", progress);
+  renderTest(t.lesson);
+}
+
+function nextQuestion() {
+  const t = testRun;
+  stopSound();
+  t.index++;
+  t.draft = "";
+  if (t.index >= t.questions.length) {
+    const score = testScore(t);
+    const previous = tests[t.lesson.id];
+    t.previousBest = previous?.best ?? null;
+    tests[t.lesson.id] = { best: Math.max(score, previous?.best ?? 0), last: score, total: t.questions.length, at: Date.now() };
+    save("learnTests", tests);
+  }
+  renderTest(t.lesson);
+  scrollTo(0, 0);
+  // Focus within the tap, so a phone opens its keyboard for the next answer.
+  document.getElementById("answer")?.focus({ preventScroll: true });
+}
+
+function renderTestResults() {
+  const t = testRun;
+  const { lesson } = t;
+  const score = testScore(t);
+  const total = t.questions.length;
+  const perfect = score === total;
+  const missed = t.questions.filter((q, i) => !isRight(t.answers[i]));
+  const siblings = trackLessons(trackOf(lesson));
+  const next = siblings[siblings.indexOf(lesson) + 1];
+  document.title = `Результаты теста · ${lesson.title} · Курс английского`;
+  if (!t.celebrated) { t.celebrated = true; if (score / total >= 0.75) confetti(); }
+
+  setView(
+    h("div", { class: "nav" }, backLink(`#unit-${lesson.id}`, "Урок")),
+    h("section", { class: "card done-card" },
+      perfect ? lessonIcon("trophy", "done-mark") : lessonIcon("pencil-line", `done-mark${score / total >= 0.75 ? "" : " soft"}`),
+      h("p", { class: "eyebrow" }, `Тест · урок ${UNIT_NO.get(lesson.id)} · ${lesson.title}`),
+      h("h1", { class: "num" }, `${score} из ${total}`),
+      h("p", { class: "lede" },
+        perfect ? "Без единой ошибки!"
+          : score / total >= 0.75 ? "Хороший результат. Фразы с ошибками вернутся на повторение."
+          : "Повторите ошибки карточками и пройдите тест ещё раз."),
+      t.previousBest != null && t.previousBest !== score
+        ? h("p", { class: "best num" }, score > t.previousBest ? `Новый рекорд! Было ${t.previousBest} из ${total}.` : `Лучший результат: ${t.previousBest} из ${total}.`)
+        : null,
+    ),
+    h("section", { class: "card" },
+      h("h2", {}, "Ответы"),
+      h("ol", { class: "results" }, t.questions.map((q, i) => {
+        const a = t.answers[i];
+        const right = isRight(a);
+        return h("li", {},
+          h("span", { class: `mark${right ? "" : " no"}`, "aria-label": right ? "Верно" : "Ошибка" }, icon(right ? "check" : "x", right ? "i" : "u")),
+          h("span", { class: "line-text" },
+            h("span", { class: "ru-line" }, q.ru),
+            !right && a.typed.trim() ? h("s", { class: "typed-line", lang: "en" }, h("span", { class: "visually-hidden" }, "Ваш ответ: "), a.typed) : null,
+            h("span", { class: "en", lang: "en" }, q.en),
+          ),
+          playButton(q.en),
+        );
+      })),
+    ),
+    ownSentenceCard(lesson),
+    h("div", { class: "btn-stack" },
+      missed.length
+        ? h("button", { class: "btn primary", type: "button", onclick: () => practiseMistakes(lesson, missed) }, icon("repeat"), `Повторить ошибки · ${missed.length}`)
+        : next ? h("a", { class: "btn primary", href: `#unit-${next.id}` }, `Урок ${UNIT_NO.get(next.id)}: ${next.title}`, icon("next")) : null,
+      h("button", { class: "btn", type: "button", onclick: () => { startTest(lesson); renderTest(lesson); scrollTo(0, 0); } }, icon("pencil-line", "u"), "Пройти ещё раз"),
+      missed.length && next ? h("a", { class: "btn", href: `#unit-${next.id}` }, `Урок ${UNIT_NO.get(next.id)}: ${next.title}`, icon("next")) : null,
+      h("a", { class: "btn", href: `#${trackOf(lesson)}` }, "К курсу"),
+    ),
+  );
+}
+
+function practiseMistakes(lesson, missed) {
+  mistakesDeck = { id: "mistakes", title: "Ошибки теста", back: `#unit-${lesson.id}`, backText: "Урок", phrases: missed };
+  startSession(mistakesDeck);
+  location.hash = "#practice-mistakes";
+}
+
+// ---- her own sentences, checked by Claude on the app's server
+function ownSentenceCard(lesson) {
+  if (!writingCheck) return null;
+  const t = testRun;
+  const example = lesson.phrases[(lesson.phrases.length * 0.5) | 0]?.en;
+  const field = h("textarea", {
+    class: "answer", id: "ownText", lang: "en", rows: "3", maxlength: "400", "aria-label": "Своё предложение по-английски",
+    placeholder: example ? `Например: ${example}` : "Напишите по-английски", autocomplete: "off", autocorrect: "off",
+    autocapitalize: "sentences", spellcheck: "false", enterkeyhint: "send",
+    oninput: (e) => { t.ownDraft = e.target.value; },
+    onkeydown: (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendOwnSentence(); } },
+  });
+  field.value = t.ownDraft;
+  return h("section", { class: "card own-card", "aria-label": "Своё предложение" },
+    h("h2", {}, "Своё предложение"),
+    h("p", { class: "plan-note" }, `Напишите своё предложение на тему урока «${lesson.title}». Проверка исправит ошибки и объяснит правило по-русски.`),
+    field,
+    h("button", { class: "btn primary", type: "button", id: "ownBtn", onclick: () => sendOwnSentence() }, icon("check"), "Проверить"),
+    h("ol", { class: "own", id: "ownList", "aria-live": "polite" }, ownItems()),
+  );
+}
+
+const OWN_VERDICT = { correct: "Верно!", almost: "Почти", wrong: "Есть ошибка" };
+function ownItems() {
+  return testRun.own.map((item) => {
+    if (item.state === "checking") return h("li", { class: "checking" }, h("span", { class: "mine", lang: "en" }, item.text), h("span", { class: "verdict" }, "Проверяем…"));
+    if (item.state === "error") return h("li", { class: "bad" }, h("span", { class: "mine", lang: "en" }, item.text), h("span", { class: "verdict" }, item.error));
+    const { verdict: v, corrected, explanation } = item.result;
+    return h("li", { class: v === "correct" ? "good" : v === "almost" ? "almost" : "bad" },
+      h("span", { class: "verdict" }, v === "correct" ? icon("check") : null, OWN_VERDICT[v] ?? v),
+      v === "correct" ? null : h("s", { class: "mine", lang: "en" }, h("span", { class: "visually-hidden" }, "Вы написали: "), item.text),
+      h("div", { class: "answer-line" }, playButton(corrected), h("span", { class: "line-text" },
+        h("span", { class: "en", lang: "en" }, corrected),
+        pronounceEnglish ? h("span", { class: "say", lang: "ru" }, pronounceEnglish(corrected)) : null)),
+      h("p", { class: "why" }, explanation),
+    );
+  }).reverse(); // newest first
+}
+const refreshOwn = () => document.getElementById("ownList")?.replaceChildren(...ownItems());
+
+let pronouncing = null;
+function loadPronunciation() {
+  pronouncing ??= import("./pronounce.js")
+    .then(async ({ pronounce, loadDictionary }) => { await loadDictionary(); pronounceEnglish ??= (text) => pronounce(text, "en"); })
+    .catch(() => { pronouncing = null; });
+  return pronouncing;
+}
+
+async function sendOwnSentence() {
+  const t = testRun;
+  const field = document.getElementById("ownText");
+  const text = (field?.value ?? "").trim();
+  if (!text) return field?.focus();
+  const item = { text, state: "checking" };
+  t.own.push(item);
+  t.ownDraft = "";
+  field.value = "";
+  refreshOwn();
+  loadPronunciation();
+  try {
+    const res = await fetch("api/check-writing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Access-Code": accessCode() },
+      body: JSON.stringify({ text, lesson: t.lesson.id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) throw new Error("Нужен код доступа: откройте субтитры и введите его.");
+    if (res.status === 429) throw new Error("Слишком много проверок подряд. Подождите минуту.");
+    if (!res.ok || !data.corrected) throw new Error("Не удалось проверить. Попробуйте ещё раз.");
+    item.state = "done";
+    item.result = data;
+    await Promise.race([pronouncing, new Promise((r) => setTimeout(r, 1500))]); // pronunciation if it's quick
+  } catch (err) {
+    item.state = "error";
+    item.error = err instanceof TypeError ? "Нет соединения. Попробуйте ещё раз." : err.message;
+  }
+  if (testRun === t) refreshOwn();
+}
+
+// ---------------------------------------------------------------- navigation (#unit-cafe, #practice-cafe, #test-cafe)
 function route() {
   attempt?.cancel();
   stopSound();
   const hash = location.hash.slice(1);
+  if (!hash.startsWith("test-")) testRun = null;
   if (hash === "grammar-plan") {
     session = null;
     renderGrammarPlan();
@@ -879,6 +1186,10 @@ function route() {
   if (hash.startsWith("practice-")) {
     const deck = deckFor(hash.slice(9));
     if (deck?.phrases.length) { renderPractice(deck); return scrollTo(0, 0); }
+  }
+  if (hash.startsWith("test-")) {
+    const lesson = LESSONS.find((l) => l.id === hash.slice(5));
+    if (lesson) { session = null; renderTest(lesson); return scrollTo(0, 0); }
   }
   session = null;
   renderCourse(TRACKS.some((t) => t.id === hash) ? hash : currentTrack);
