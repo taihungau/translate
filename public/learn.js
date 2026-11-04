@@ -70,7 +70,8 @@ const plural = (n, one, few, many) => {
 // ---------------------------------------------------------------- listening
 // In the app, lines are read by Deepgram's American voices (GET api/tts, an MP3 the CDN keeps).
 // An audio file plays even when an iPhone is on silent, unlike the phone's own voice, which is
-// only the fallback. A published copy plays the recordings published with it (LEARN_RECORDINGS).
+// only the fallback. A published copy has no server: it plays the same recordings, published
+// with it as one bundle per lesson (LEARN_RECORDINGS is the folder, e.g. "audio/").
 const RECORDINGS = globalThis.LEARN_RECORDINGS ?? null;
 const tts = "speechSynthesis" in window ? window.speechSynthesis : null;
 const player = new Audio();
@@ -79,8 +80,30 @@ let serverTts = false; // set once the app's server says it can read aloud
 let voiceChoice = load("learnVoice", "female"); // "female" (Thalia) or "male" (Orion)
 const canPlay = () => Boolean(RECORDINGS || serverTts || tts);
 
+const bundles = new Map(); // lesson id → Promise<{ text: data URL }>
 const downloads = new Map(); // "voice|text" → { promise, url }
+
+/** Where a line's audio comes from, or null when only the phone's voice can read it. */
 function download(text) {
+  if (RECORDINGS) {
+    const lesson = PHRASE_LESSON.get(text);
+    if (!lesson) return null;
+    const key = `recorded|${text}`;
+    if (!downloads.has(key)) {
+      if (!bundles.has(lesson.id)) {
+        const bundle = fetch(`${RECORDINGS}${lesson.id}.json`).then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))));
+        bundle.catch(() => bundles.delete(lesson.id));
+        bundles.set(lesson.id, bundle);
+      }
+      const entry = { url: null };
+      entry.promise = bundles.get(lesson.id).then((all) => all[text] ?? Promise.reject(new Error("not recorded")))
+        .then((url) => (entry.url = url));
+      entry.promise.catch(() => downloads.delete(key));
+      downloads.set(key, entry);
+    }
+    return downloads.get(key);
+  }
+  if (!serverTts) return null;
   const key = `${voiceChoice}|${text}`;
   if (!downloads.has(key)) {
     let code = "";
@@ -96,7 +119,7 @@ function download(text) {
   return downloads.get(key);
 }
 /** Start downloading a line's audio before it is played, so the tap plays it at once. */
-const prefetch = (text) => { if (serverTts && text) download(text).promise.catch(() => {}); };
+const prefetch = (text) => { if (text) download(text)?.promise.catch(() => {}); };
 
 // Phones only let sound start from a tap. When the audio is still downloading, a moment of
 // silence is played inside the tap, which lets this player start once the audio arrives.
@@ -134,11 +157,10 @@ async function speak(text, rate = 1, button = null) {
   tts?.cancel();
   player.pause();
   markPlaying(button);
+  const entry = download(text);
   try {
-    if (RECORDINGS?.[text]) return await playFile(RECORDINGS[text], rate);
-    if (serverTts) {
-      const entry = download(text);
-      if (entry.url) return await playFile(entry.url, rate); // downloaded already: plays within the tap
+    if (entry?.url) return await playFile(entry.url, rate); // downloaded already: plays within the tap
+    if (entry) {
       player.src = SILENCE;
       player.play().catch(() => {});
       return await playFile(await entry.promise, rate);
@@ -383,7 +405,8 @@ function confetti() {
 
 // ---------------------------------------------------------------- course data
 const ALL_PHRASES = LESSONS.flatMap((lesson) => lesson.phrases);
-const PHRASE_LESSON = new Map(LESSONS.flatMap((lesson) => lesson.phrases.map((p) => [p.en, lesson])));
+// Each English line (phrases and grammar examples) → its lesson.
+const PHRASE_LESSON = new Map(LESSONS.flatMap((lesson) => [...(lesson.examples ?? []), ...lesson.phrases].map((p) => [p.en, lesson])));
 const levelOf = (lesson) => LEVELS.find((l) => l.id === lesson.level);
 const trackOf = (lesson) => levelOf(lesson).track;
 const trackLessons = (track) => LESSONS.filter((lesson) => trackOf(lesson) === track);
