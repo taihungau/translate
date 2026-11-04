@@ -36,13 +36,22 @@ Both can be turned off in Settings → Pronunciation.
 ## English course (Learn)
 
 `learn.html` (the book tab, or "Курс английского" on the start screen) is an English course for a
-Russian speaker, explained in Russian:
+Russian speaker, explained in Russian: **62 units, 495 phrases, in three tracks**, each unit with
+its own icon.
 
-- **12 units in three levels** (A1 → A2 → B1), in order: meeting people, being polite, numbers and
-  time, café, shopping, directions, travel, the movies, getting help, small talk, opinions, plans.
-- Each unit has a goal, a short grammar note aimed at typical mistakes Russian speakers make, and
-  7–9 everyday phrases with the Russian meaning and the English **written in Russian letters**
-  (the same spelling as under live subtitles; `test/learn.test.js` keeps them in sync).
+- **Каждый день (every day), 30 units, A1 → B2:** meeting people, family, time, daily routine,
+  café, shopping, home, weather, directions, transport, travel, hotel, the movies, groceries, the
+  doctor, phone calls, bank and post, small talk, invitations, hobbies, opinions, plans, telling a
+  story, complaints, then diplomatic requests, discussing, explaining and everyday expressions.
+- **Грамматика (grammar), 16 units:** pronouns, *to be*, articles, Present Simple and Continuous,
+  questions, adjectives, prepositions, Past Simple, irregular verbs, the future, modal verbs,
+  comparison, adverbs, Present Perfect and *if* sentences. Each has the rule, a table of forms and
+  the mistakes Russian speakers typically make (wrong → right, and why).
+- **Работа (work), 16 units:** introducing yourself, colleagues, meetings, calls, scheduling,
+  requests, clarifying, project updates, mistakes and apologies, feedback, presentations, job
+  interviews, negotiating, customer service, emails and networking.
+- Every phrase has the Russian meaning and the English **written in Russian letters** (the same
+  spelling as under live subtitles; `test/learn.test.js` keeps them in sync).
 - **Practice cards** in two modes: *Понимать* (English → Russian) and *Говорить* (Russian → English).
   Every phrase and word can be played aloud at normal or slow speed (the device's English voice).
 - **Speaking check:** she says the phrase, Deepgram writes down what it heard, and the missed words
@@ -50,6 +59,8 @@ Russian speaker, explained in Russian:
 - **Spaced repetition:** a known phrase comes back after 1, 3, 7, 14 and 30 days; a forgotten one
   comes back in a few cards. **"Из фильмов"** reviews phrases heard in live subtitles.
 - Progress stays on the device (browser storage).
+- Lesson icons: [Lucide](https://lucide.dev) 1.56.0 (ISC; some from Feather, MIT), drawn from a
+  sprite inside `learn.html`; licence texts in `public/icons-LICENSE.txt`.
 
 ## Appearance
 

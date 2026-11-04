@@ -1,7 +1,7 @@
 // The Learn page: an English course for a Russian speaker. Course → unit (goal, grammar,
 // phrases) → practice cards. Phrases are read aloud by the device's English voice; in the
 // subtitles app, the speaking check listens with the same speech recognition as live subtitles.
-import { LEVELS, LESSONS } from "./lessons.js";
+import { TRACKS, LEVELS, LESSONS } from "./lessons.js";
 import { compareSpeech, grade, isLearned, isDue, verdict } from "./learn-core.js";
 
 const APP_URL = "https://translate-hyperlinks-projects.vercel.app/";
@@ -178,11 +178,27 @@ async function listenOnce(onInterim) {
 }
 
 // ---------------------------------------------------------------- course data
-const UNIT_NO = new Map(LESSONS.map((lesson, i) => [lesson.id, i + 1]));
 const ALL_PHRASES = LESSONS.flatMap((lesson) => lesson.phrases);
+const levelOf = (lesson) => LEVELS.find((l) => l.id === lesson.level);
+const trackOf = (lesson) => levelOf(lesson).track;
+const trackLessons = (track) => LESSONS.filter((lesson) => trackOf(lesson) === track);
+// Units are numbered within their track: Каждый день 1–30, Грамматика 1–16, Работа 1–16.
+const UNIT_NO = new Map(TRACKS.flatMap((t) => trackLessons(t.id).map((lesson, i) => [lesson.id, i + 1])));
 const knownOnce = (phrase) => (progress[phrase.en]?.box ?? 0) >= 1;
 const unitDone = (lesson) => lesson.phrases.every(knownOnce);
-const nextLesson = () => LESSONS.find((lesson) => !unitDone(lesson));
+const nextLesson = (track) => trackLessons(track).find((lesson) => !unitDone(lesson));
+let currentTrack = TRACKS.some((t) => t.id === load("learnTrack", "")) ? load("learnTrack", "") : TRACKS[0].id;
+
+// A lesson's picture: a Lucide icon from the sprite in learn.html.
+function lessonIcon(name, cls = "tile") {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "i");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#u-${name}`);
+  svg.append(use);
+  return h("span", { class: cls, "aria-hidden": "true" }, svg);
+}
 
 function filmPhrases() {
   return load("heardPhrases", [])
@@ -196,22 +212,28 @@ function deckFor(id) {
     const now = Date.now();
     const due = [...ALL_PHRASES, ...filmPhrases()].filter((p) => isDue(progress[p.en], now));
     due.sort((a, b) => progress[a.en].due - progress[b.en].due);
-    return { id, title: "Повторение", back: "#", phrases: due.slice(0, 30) };
+    return { id, title: "Повторение", back: `#${currentTrack}`, phrases: due.slice(0, 30) };
   }
-  if (id === "films") return { id, title: "Фразы из фильмов", back: "#", phrases: filmPhrases().slice(0, 40) };
+  if (id === "films") return { id, title: "Фразы из фильмов", back: "#daily", phrases: filmPhrases().slice(0, 40) };
   const lesson = LESSONS.find((l) => l.id === id);
   return lesson && { id, title: lesson.title, back: `#unit-${id}`, phrases: lesson.phrases, lesson };
 }
 
 // ---------------------------------------------------------------- views
-function renderCourse() {
+function renderCourse(track = currentTrack) {
+  currentTrack = track;
+  save("learnTrack", track);
   document.title = "Курс английского";
-  const practised = ALL_PHRASES.filter(knownOnce).length;
-  const learned = ALL_PHRASES.filter((p) => isLearned(progress[p.en])).length;
+  const info = TRACKS.find((t) => t.id === track);
+  const lessons = trackLessons(track);
+  const phrases = lessons.flatMap((lesson) => lesson.phrases);
+  const practised = phrases.filter(knownOnce).length;
+  const learned = phrases.filter((p) => isLearned(progress[p.en])).length;
   const now = Date.now();
   const due = [...ALL_PHRASES, ...filmPhrases()].filter((p) => isDue(progress[p.en], now)).length;
-  const next = nextLesson();
+  const next = nextLesson(track);
   const films = load("heardPhrases", []).length;
+  const started = (lesson) => lesson.phrases.some(knownOnce);
 
   view.replaceChildren(
     h("div", { class: "nav" },
@@ -219,27 +241,29 @@ function renderCourse() {
     ),
     h("header", {},
       h("h1", {}, "Курс английского"),
-      h("p", { class: "lede" }, "Двенадцать уроков от первых фраз до свободного разговора. Каждая фраза — с переводом и произношением русскими буквами; её можно послушать и повторить."),
+      h("p", { class: "lede" }, `${LESSONS.length} ${plural(LESSONS.length, "урок", "урока", "уроков")} в трёх разделах. Каждая фраза — с переводом и произношением русскими буквами; её можно послушать и повторить вслух.`),
     ),
+    h("nav", { class: "tracks", "aria-label": "Разделы курса" },
+      TRACKS.map((t) => h("a", { class: "track", href: `#${t.id}`, "aria-current": t.id === track ? "page" : null },
+        lessonIcon(t.icon, "track-icon"), h("span", {}, t.title)))),
     h("section", { class: "card summary", "aria-label": "Прогресс" },
+      h("p", { class: "summary-about" }, info.about),
       h("div", { class: "summary-stat" },
         h("b", { class: "num" }, practised),
-        h("span", {}, `из ${ALL_PHRASES.length} ${plural(ALL_PHRASES.length, "фразы", "фраз", "фраз")} пройдено`),
+        h("span", {}, `из ${phrases.length} ${plural(phrases.length, "фразы", "фраз", "фраз")} пройдено`),
       ),
-      h("div", { class: "meter" }, h("i", { style: `width: ${(practised / ALL_PHRASES.length) * 100}%` })),
-      h("p", { class: "summary-note" }, practised
-        ? `Закреплено повторением: ${learned}. Пройденные фразы возвращаются на повторение через день, 3 дня, неделю и дольше.`
-        : "Начните с первого урока. Уроки идут по порядку, от простого к сложному."),
+      h("div", { class: "meter" }, h("i", { style: `width: ${(practised / phrases.length) * 100}%` })),
+      practised ? h("p", { class: "summary-note" }, `Закреплено повторением: ${learned}. Пройденные фразы возвращаются через день, 3 дня, неделю и дольше.`) : null,
       h("div", { class: "btn-row" },
         next
-          ? h("a", { class: "btn primary", href: `#unit-${next.id}` }, `${UNIT_NO.get(next.id) === 1 && !next.phrases.some(knownOnce) ? "Начать" : "Продолжить"}: урок ${UNIT_NO.get(next.id)}`, icon("next"))
-          : h("span", { class: "btn" }, "Все уроки пройдены"),
+          ? h("a", { class: "btn primary", href: `#unit-${next.id}` }, `${started(next) || practised ? "Продолжить" : "Начать"}: урок ${UNIT_NO.get(next.id)}`, icon("next"))
+          : h("span", { class: "btn" }, "Все уроки раздела пройдены"),
         due ? h("a", { class: "btn", href: "#practice-review" }, icon("repeat"), `Повторить · ${due}`) : null,
       ),
     ),
-    ...LEVELS.map((level) =>
-      h("section", { class: "level", "aria-label": `Уровень ${level.id}` },
-        h("div", { class: "level-head" }, h("span", { class: "badge" }, level.id), h("h3", {}, level.title)),
+    ...LEVELS.filter((level) => level.track === track).map((level) =>
+      h("section", { class: "level", "aria-label": level.title },
+        h("div", { class: "level-head" }, h("span", { class: "badge" }, level.badge ?? level.id), h("h3", {}, level.title)),
         h("p", { class: "level-about" }, level.about),
         h("ol", { class: "units" },
           LESSONS.filter((lesson) => lesson.level === level.id).map((lesson) => {
@@ -247,25 +271,25 @@ function renderCourse() {
             const done = known === lesson.phrases.length;
             return h("li", {},
               h("a", { class: `unit${done ? " done" : ""}${lesson === next ? " next" : ""}`, href: `#unit-${lesson.id}` },
-                h("span", { class: "unit-no", "aria-hidden": "true" }, done ? icon("check") : UNIT_NO.get(lesson.id)),
+                lessonIcon(lesson.icon),
                 h("span", { class: "unit-text" },
                   h("b", {}, lesson.title),
-                  h("small", {}, `${lesson.en} · `, h("span", { class: "num" }, `${known} из ${lesson.phrases.length}`)),
+                  h("small", {}, `${UNIT_NO.get(lesson.id)} · ${lesson.en} · `, h("span", { class: "num" }, done ? "пройдено" : `${known} из ${lesson.phrases.length}`)),
                 ),
-                icon("next"),
+                done ? h("span", { class: "unit-done", "aria-label": "Пройдено" }, icon("check")) : icon("next"),
               ),
             );
           }),
         ),
       ),
     ),
-    films
+    track === "daily" && films
       ? h("section", { class: "level", "aria-label": "Из фильмов" },
           h("div", { class: "level-head" }, h("h3", {}, "Из ваших фильмов")),
           h("p", { class: "level-about" }, "Фразы, которые прозвучали в режиме живых субтитров."),
           h("ol", { class: "units" }, h("li", {},
             h("a", { class: "unit", href: "#practice-films" },
-              h("span", { class: "unit-no", "aria-hidden": "true" }, icon("film")),
+              h("span", { class: "tile", "aria-hidden": "true" }, icon("film")),
               h("span", { class: "unit-text" }, h("b", {}, "Фразы из фильмов"), h("small", { class: "num" }, `${films} ${plural(films, "фраза", "фразы", "фраз")}`)),
               icon("next"),
             ),
@@ -276,34 +300,55 @@ function renderCourse() {
 }
 
 function renderUnit(lesson) {
-  const no = UNIT_NO.get(lesson.id);
-  const level = LEVELS.find((l) => l.id === lesson.level);
+  const level = levelOf(lesson);
+  const track = TRACKS.find((t) => t.id === level.track);
+  const isGrammar = Boolean(lesson.table);
   document.title = `${lesson.title} · Курс английского`;
+  const line = (en, say, ru) => h("span", { class: "line-text" },
+    h("span", { class: "en", lang: "en" }, en),
+    say ? h("span", { class: "say", lang: "ru" }, say) : null,
+    h("span", { class: "ru" }, ru));
+
   view.replaceChildren(
-    h("div", { class: "nav" }, backLink("#", "Курс")),
-    h("header", {},
-      h("p", { class: "eyebrow" }, `Урок ${no} · ${level.id} ${level.title}`),
-      h("h1", {}, lesson.title),
-      h("p", { class: "lede" }, `Цель: ${lesson.goal[0].toLowerCase()}${lesson.goal.slice(1)}`),
+    h("div", { class: "nav" }, backLink(`#${track.id}`, track.title)),
+    h("header", { class: "unit-head" },
+      lessonIcon(lesson.icon, "tile big"),
+      h("div", {},
+        h("p", { class: "eyebrow" }, [track.title, `урок ${UNIT_NO.get(lesson.id)}`, level.badge ?? level.id].filter((x, i, all) => all.indexOf(x) === i).join(" · ")),
+        h("h1", {}, lesson.title),
+        h("p", { class: "lede" }, `Цель: ${lesson.goal[0].toLowerCase()}${lesson.goal.slice(1)}`),
+      ),
     ),
     h("section", { class: "card grammar" },
-      h("h2", {}, "Грамматика"),
+      h("h2", {}, isGrammar ? "Правило" : "Грамматика"),
       h("p", {}, lesson.grammar),
-      h("ul", { class: "examples" }, lesson.examples.map((ex) =>
-        h("li", {}, playButton(ex.en), h("span", { class: "line-text" }, h("span", { class: "en", lang: "en" }, ex.en), h("span", { class: "ru" }, ex.ru))),
-      )),
+      lesson.examples?.length
+        ? h("ul", { class: "examples" }, lesson.examples.map((ex) => h("li", {}, playButton(ex.en), line(ex.en, "", ex.ru))))
+        : null,
     ),
+    isGrammar
+      ? h("section", { class: "card" },
+          h("h2", {}, "Формы"),
+          h("div", { class: "table-wrap" }, h("table", { class: "forms" },
+            h("tbody", {}, lesson.table.map((row) =>
+              h("tr", {}, h("th", { scope: "row" }, row.form), h("td", {}, h("span", { class: "en", lang: "en" }, row.en), h("span", { class: "ru" }, row.ru))))),
+          )),
+        )
+      : null,
+    lesson.mistakes
+      ? h("section", { class: "card" },
+          h("h2", {}, "Частые ошибки"),
+          h("ul", { class: "mistakes" }, lesson.mistakes.map((m) =>
+            h("li", {},
+              h("span", { class: "wrong", lang: "en" }, h("span", { class: "visually-hidden" }, "Неправильно: "), m.wrong),
+              h("span", { class: "right", lang: "en" }, h("span", { class: "visually-hidden" }, "Правильно: "), m.right),
+              h("span", { class: "why" }, m.why),
+            ))),
+        )
+      : null,
     h("section", { class: "card" },
-      h("h2", {}, `Фразы урока · ${lesson.phrases.length}`),
-      h("ol", { class: "phrase-list" }, lesson.phrases.map((p) =>
-        h("li", {}, playButton(p.en),
-          h("span", { class: "line-text" },
-            h("span", { class: "en", lang: "en" }, p.en),
-            h("span", { class: "say", lang: "ru" }, p.say),
-            h("span", { class: "ru" }, p.ru),
-          ),
-        ),
-      )),
+      h("h2", {}, `${isGrammar ? "Примеры" : "Фразы урока"} · ${lesson.phrases.length}`),
+      h("ol", { class: "phrase-list" }, lesson.phrases.map((p) => h("li", {}, playButton(p.en), line(p.en, p.say, p.ru)))),
     ),
     h("a", { class: "btn primary wide", href: `#practice-${lesson.id}` }, "Начать практику", icon("next")),
   );
@@ -431,9 +476,11 @@ function renderDone() {
   const { deck, knew, again } = session;
   const lesson = deck.lesson;
   const done = lesson && unitDone(lesson);
-  const next = lesson && LESSONS[LESSONS.indexOf(lesson) + 1];
+  const siblings = lesson ? trackLessons(trackOf(lesson)) : [];
+  const next = lesson && siblings[siblings.indexOf(lesson) + 1];
+  const courseHash = lesson ? `#${trackOf(lesson)}` : `#${currentTrack}`;
   view.replaceChildren(
-    h("div", { class: "nav" }, backLink("#", "Курс")),
+    h("div", { class: "nav" }, backLink(courseHash, "Курс")),
     h("section", { class: "card done-card" },
       h("span", { class: "done-mark" }, icon("check")),
       h("h1", {}, done ? `Урок ${UNIT_NO.get(lesson.id)} пройден` : "Готово"),
@@ -442,7 +489,7 @@ function renderDone() {
     h("div", { class: "btn-row" },
       next && done ? h("a", { class: "btn primary", href: `#unit-${next.id}` }, `Урок ${UNIT_NO.get(next.id)}: ${next.title}`, icon("next")) : null,
       h("button", { class: "btn", type: "button", onclick: () => { startSession(deckFor(deck.id) ?? deck); renderPractice(session.deck); } }, icon("repeat"), "Ещё раз"),
-      h("a", { class: "btn", href: "#" }, "К курсу"),
+      h("a", { class: "btn", href: courseHash }, "К курсу"),
     ),
   );
 }
@@ -461,7 +508,7 @@ function route() {
     if (deck?.phrases.length) { renderPractice(deck); return scrollTo(0, 0); }
   }
   session = null;
-  renderCourse();
+  renderCourse(TRACKS.some((t) => t.id === hash) ? hash : currentTrack);
   scrollTo(0, 0);
 }
 addEventListener("hashchange", route);

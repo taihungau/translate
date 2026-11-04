@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dictionary } from "cmu-pronouncing-dictionary"; // the same version pronounce.js downloads
 import { enToCyrillic } from "../public/pronounce.js";
-import { LESSONS } from "../public/lessons.js";
+import { readFileSync } from "node:fs";
+import { TRACKS, LEVELS, LESSONS } from "../public/lessons.js";
 import { compareSpeech, tokens, grade, isLearned, isDue, INTERVALS } from "../public/learn-core.js";
 
 const marks = (r) => r.words.map((w) => (w.ok ? w.word : `[${w.word}]`)).join(" ");
@@ -18,6 +19,26 @@ test("every lesson phrase has its Russian-letter pronunciation, as live subtitle
       seen.add(p.en);
     }
   }
+});
+
+test("the course hangs together: tracks, levels, unique hash-safe ids and an icon for every lesson", () => {
+  const html = readFileSync(new URL("../public/learn.html", import.meta.url), "utf8");
+  const sprite = new Set([...html.matchAll(/<symbol id="u-([a-z0-9-]+)"/g)].map((m) => m[1]));
+  const trackIds = new Set(TRACKS.map((t) => t.id));
+  for (const t of TRACKS) assert.ok(sprite.has(t.icon), `track icon ${t.icon}`);
+  for (const level of LEVELS) assert.ok(trackIds.has(level.track), `level ${level.id}`);
+  const ids = new Set();
+  for (const lesson of LESSONS) {
+    assert.match(lesson.id, /^[a-z0-9-]+$/);
+    assert.ok(!ids.has(lesson.id) && !trackIds.has(lesson.id) && !["review", "films"].includes(lesson.id), `duplicate or reserved id ${lesson.id}`);
+    ids.add(lesson.id);
+    assert.ok(LEVELS.some((l) => l.id === lesson.level), `${lesson.id}: level ${lesson.level}`);
+    assert.ok(sprite.has(lesson.icon), `${lesson.id}: icon ${lesson.icon} is not in learn.html`);
+    assert.ok(lesson.goal && lesson.grammar, lesson.id);
+    for (const row of lesson.table ?? []) assert.ok(row.form && row.en && row.ru, `${lesson.id} table`);
+    for (const m of lesson.mistakes ?? []) assert.ok(m.wrong && m.right && m.why && m.wrong !== m.right, `${lesson.id} mistakes`);
+  }
+  for (const t of TRACKS) assert.ok(LESSONS.some((l) => LEVELS.find((v) => v.id === l.level).track === t.id), `empty track ${t.id}`);
 });
 
 test("compares what was said with the phrase, word by word", () => {
