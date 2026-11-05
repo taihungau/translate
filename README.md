@@ -59,6 +59,11 @@ its own icon.
   audio, so it plays even when an iPhone is on silent. The same line always gives the same MP3, so
   Vercel's CDN keeps it a year and each line is generated once. Without `DEEPGRAM_API_KEY` the
   page falls back to the phone's own US English voice.
+- **A checklist for every lesson:** two tasks, *learn the phrases* (each one "Знаю" at least once)
+  and *pass the test* (6 of 8 or better). The course list shows each lesson's progress as a ring
+  that fills up and turns into a green tick when both are done, with ✓ chips for the two tasks;
+  every phrase on a lesson page gets its own tick; each level counts its finished lessons and its
+  bar turns green when all are done.
 - **Daily goal and streak:** 5, 10 or 20 cards a day with a progress ring, days in a row, and a
   small celebration when the goal is met or a unit is finished.
 - **Speaking check:** she says the phrase, Deepgram writes down what it heard, and the missed words

@@ -111,7 +111,9 @@
     @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .card { border: 1px solid var(--line); } }
     :root[data-theme="dark"] .card { border: 1px solid var(--line); }
     .meter { height: 6px; border-radius: 3px; background: var(--inset); overflow: hidden; }
-    .meter i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.4s ease; }
+    .meter i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.4s ease, background-color 0.4s ease; }
+    .meter.done i { background: var(--ok); }
+    .meter.thin { height: 4px; }
 
     /* ---------- buttons (Apple's filled and gray styles) ---------- */
     .btn {
@@ -200,6 +202,10 @@
       background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
     }
     .level-head h3 { margin: 0; font-size: 18px; font-weight: 650; }
+    .level-count { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+    .level-count svg.i { width: 16px; height: 16px; stroke-width: 3; }
+    .level.done .level-count { color: var(--ok); }
+    .level.done .badge { background: var(--ok-soft); color: var(--ok); }
     .level-about { margin: -4px 0 2px; color: var(--ink-2); font-size: 14px; }
     .units { list-style: none; margin: 0; padding: 0; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
     @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .units { border: 1px solid var(--line); } }
@@ -217,13 +223,50 @@
     .tile.big svg.i { width: 30px; height: 30px; }
     .unit.done .tile { background: var(--ok-soft); color: var(--ok); }
     .unit.next .tile { box-shadow: inset 0 0 0 2px var(--accent); }
-    .unit-done { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--ok); color: var(--card); }
-    .unit-done svg.i { width: 15px; height: 15px; stroke-width: 2.8; }
+    /* Checklist marks: an empty circle, a blue ring filling up, a green circle with a tick when done. */
+    .tick { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; }
+    .tick svg.arc { width: 28px; height: 28px; transform: rotate(-90deg); }
+    .tick circle { fill: none; stroke-width: 2.5; }
+    .tick .ring-track { stroke: var(--ink-3); }
+    .tick .ring-value { stroke: var(--accent); stroke-width: 3; }
+    .tick.done { background: var(--ok); color: #fff; animation: tick-in 0.35s cubic-bezier(.2, 1.4, .4, 1); }
+    .tick.done svg.i { width: 16px; height: 16px; stroke-width: 3; }
+    @keyframes tick-in { from { transform: scale(0.6); opacity: 0; } }
+    .done-word { color: var(--ok); font-weight: 600; }
+    /* The lesson's two tasks: ✓ Фразы 8/8 · ○ Тест */
+    .tasks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .task {
+      display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px; border-radius: 11px;
+      background: var(--fill); color: var(--ink-2); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+    }
+    .task.done { background: var(--ok-soft); color: var(--ok); }
+    .task svg.i { width: 12px; height: 12px; stroke-width: 3.2; }
+    .task .box { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--ink-3); }
+    /* Задания урока: the lesson's checklist */
+    .tasks-card { padding-bottom: 6px; }
+    .task-count { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+    .tasks-card.done { box-shadow: inset 0 0 0 2px var(--ok), var(--shadow); }
+    .tasks-card.done .task-count { color: var(--ok); }
+    .task-trophy { display: grid; }
+    .task-trophy svg.i { width: 18px; height: 18px; }
+    .task-list { list-style: none; margin: 6px 0 0; padding: 0; }
+    .task-list li + li { border-top: 1px solid var(--line); }
+    .task-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; color: var(--ink); text-decoration: none; }
+    .task-row:active { opacity: 0.55; }
+    .task-row .unit-text small { font-size: 14px; }
+    .task-row.done small { color: var(--ok); }
+    .task-row > svg.i { color: var(--ink-3); width: 18px; height: 18px; }
+    /* every phrase of a lesson gets ticked once she knows it */
+    .phrase-list .line-text { flex: 1; }
+    .phrase-tick {
+      flex: none; width: 22px; height: 22px; margin-top: 8px; border-radius: 50%; display: grid; place-items: center;
+      border: 1.5px solid var(--ink-3); color: transparent;
+    }
+    .phrase-tick svg.i { width: 13px; height: 13px; stroke-width: 3.2; }
+    .phrase-tick.on { background: var(--ok); border-color: var(--ok); color: #fff; }
     .unit-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     .unit-text b { font-weight: 600; }
     .unit-text small { color: var(--ink-2); font-size: 14px; }
-    .mini-meter { display: block; height: 3px; margin-top: 6px; border-radius: 2px; background: var(--inset); overflow: hidden; max-width: 160px; }
-    .mini-meter i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
     .unit > svg.i { color: var(--ink-3); width: 18px; height: 18px; }
 
     /* ---------- unit ---------- */
@@ -261,7 +304,7 @@
     .plan-mistake { font-size: 14px; color: var(--ink-3); }
     .plan-mistake s { color: var(--miss); text-decoration-thickness: 1.5px; }
     .plan-mistake .right { color: var(--ok); font-weight: 600; }
-    .plan-unit > svg.i, .plan-unit > .unit-done { margin-top: 10px; }
+    .plan-unit > .tick { margin-top: 8px; }
     .plan-note { margin: 8px 0 0; color: var(--ink-2); font-size: 15px; }
     .weeks { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 15px; }
     .weeks th { text-align: left; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); padding: 8px 8px 8px 0; }
