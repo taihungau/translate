@@ -4,7 +4,7 @@ import { dictionary } from "cmu-pronouncing-dictionary"; // the same version pro
 import { enToCyrillic } from "../public/pronounce.js";
 import { readFileSync } from "node:fs";
 import { TRACKS, LEVELS, LESSONS } from "../public/lessons.js";
-import { compareSpeech, checkWriting, oneLetterOff, testQuestions, tokens, grade, isLearned, isDue, INTERVALS, dayKey, streak } from "../public/learn-core.js";
+import { compareSpeech, checkWriting, oneLetterOff, testQuestions, choices, tokens, grade, isLearned, isDue, INTERVALS, dayKey, streak } from "../public/learn-core.js";
 
 const marks = (r) => r.words.map((w) => (w.ok ? w.word : `[${w.word}]`)).join(" ");
 
@@ -105,6 +105,31 @@ test("a test asks the lesson's phrases in a new order, each once", () => {
   assert.equal(new Set(asked).size, asked.length);
   assert.ok(asked.every((p) => phrases.includes(p)));
   assert.equal(testQuestions(phrases, 100).length, phrases.length);
+});
+
+test("multiple choice: the right answer and three others, each once", () => {
+  const pool = ["a", "b", "c", "d", "e", "b"];
+  for (let i = 0; i < 20; i++) {
+    const options = choices("b", pool);
+    assert.equal(options.length, 4);
+    assert.ok(options.includes("b"));
+    assert.equal(new Set(options).size, 4);
+  }
+  assert.deepEqual(choices("a", ["a", "b"]).sort(), ["a", "b"], "a short lesson gives fewer options");
+});
+
+test("seven levels, A to G, mean the same in every track", () => {
+  assert.deepEqual([...new Set(LEVELS.map((l) => l.badge))].sort().join(""), "ABCDEFG");
+  for (const t of TRACKS) {
+    const letters = LEVELS.filter((l) => l.track === t.id).map((l) => l.badge).join("");
+    assert.ok("ABCDEFG".includes(letters), `${t.id}: ${letters} in order`);
+  }
+  const order = LESSONS.map((l) => LEVELS.findIndex((v) => v.id === l.level));
+  for (const t of TRACKS) {
+    const inTrack = LESSONS.filter((l) => LEVELS.find((v) => v.id === l.level).track === t.id).map((l) => LEVELS.findIndex((v) => v.id === l.level));
+    assert.deepEqual(inTrack, [...inTrack].sort((a, b) => a - b), `${t.id}: lessons go from easy to hard`);
+  }
+  assert.ok(order.length >= 120);
 });
 
 test("spaced repetition: known phrases come back later, forgotten ones right away", () => {

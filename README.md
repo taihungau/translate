@@ -36,20 +36,32 @@ Both can be turned off in Settings → Pronunciation.
 ## English course (Learn)
 
 `learn.html` (the book tab, or "Курс английского" on the start screen) is an English course for a
-Russian speaker, explained in Russian: **62 units, 495 phrases, in three tracks**, each unit with
-its own icon.
+Russian speaker, explained in Russian: **124 units, 991 phrases, in three tracks and seven levels,
+A to G** (roughly CEFR A0, A1, A2, B1, B2, C1, C2; a letter means the same in every track), each
+unit with its own icon.
 
-- **Каждый день (every day), 30 units, A1 → B2:** meeting people, family, time, daily routine,
-  café, shopping, home, weather, directions, transport, travel, hotel, the movies, groceries, the
-  doctor, phone calls, bank and post, small talk, invitations, hobbies, opinions, plans, telling a
-  story, complaints, then diplomatic requests, discussing, explaining and everyday expressions.
-- **Грамматика (grammar), 16 units:** pronouns, *to be*, articles, Present Simple and Continuous,
-  questions, adjectives, prepositions, Past Simple, irregular verbs, the future, modal verbs,
-  comparison, adverbs, Present Perfect and *if* sentences. Each has the rule, a table of forms and
+- **Каждый день (every day), 58 units, A → G:** first words and "I don't understand", meeting
+  people, family, likes, time, routine, café, shopping, clothes, home, weather, directions,
+  transport, travel, hotel, the movies, groceries, the doctor, phone calls, bank and post, small
+  talk, invitations, hobbies, opinions, plans, stories, complaints, health, phones and the
+  internet; then diplomacy, discussion, feelings, money, news and advice; then shades of meaning,
+  persuading, humor, phrasal verbs, formal and informal, storytelling, disagreeing and keeping a
+  conversation going; and at G native idioms, slang, sounding natural, American culture, big ideas,
+  hedging, emphasis and eloquence.
+- **Грамматика (grammar), 44 units, B → G:** from pronouns, *to be*, articles and the present
+  tenses, through the past, future, modals, comparison, Present Perfect and *if*, to Past
+  Continuous, *used to*, quantity, *too/enough*, -ing or *to*, relative clauses, the passive, Past
+  Perfect, reported speech, the third and mixed conditionals, deduction, *I wish*, question tags,
+  inversion, cleft sentences, participle clauses and more. Each has the rule, a table of forms and
   the mistakes Russian speakers typically make (wrong → right, and why).
-- **Работа (work), 16 units:** introducing yourself, colleagues, meetings, calls, scheduling,
-  requests, clarifying, project updates, mistakes and apologies, feedback, presentations, job
-  interviews, negotiating, customer service, emails and networking.
+- **Работа (work), 22 units, C → G:** introducing yourself, colleagues, requests, calls, meetings,
+  updates, feedback, emails, presentations, interviews, negotiating, networking, leading a team,
+  difficult conversations, pitching, strategy, public speaking and talking to executives.
+- **Five tasks per unit, one per skill**, shown as a checklist (the unit turns green when all are
+  done): *Карточки* (learn every phrase), *Аудирование* (hear a phrase and pick what was said),
+  *Чтение* (read a phrase and pick its meaning), *Говорение* (say it in English: checked by speech
+  recognition in the app, self-checked elsewhere) and *Письмо* (the written test). Each exercise
+  has 8 phrases and is passed with 6.
 - Every phrase has the Russian meaning and the English **written in Russian letters** (the same
   spelling as under live subtitles; `test/learn.test.js` keeps them in sync).
 - **Practice cards** in two modes: *Понимать* (English → Russian) and *Говорить* (Russian → English).

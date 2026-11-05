@@ -192,3 +192,12 @@ export const isLearned = (state) => (state?.box ?? 0) >= 2;
 
 /** Seen before and due again. Phrases never seen are new, not due. */
 export const isDue = (state, now = Date.now()) => Boolean(state) && state.due <= now;
+
+/**
+ * Answers to choose from: the right one and up to `count - 1` others from `pool`, each shown once,
+ * in a random order. Used by the listening and reading exercises.
+ */
+export function choices(right, pool, count = 4, random = Math.random) {
+  const others = testQuestions([...new Set(pool)].filter((x) => x !== right), count - 1, random);
+  return testQuestions([right, ...others], count, random);
+}
