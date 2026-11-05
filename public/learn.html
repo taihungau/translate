@@ -10,7 +10,8 @@
   <title>Курс английского</title>
   <meta name="claude:viewport-fit-sides" content="cover">
   <!-- Same appearance setting as the subtitles app, applied before the first paint. -->
-  <script>try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
+  <script>try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+  try { if (localStorage.getItem("learnBackdrop") !== '"none"') document.documentElement.classList.add("has-backdrop"); } catch { document.documentElement.classList.add("has-backdrop"); }</script>
   <style>
     /* Layout: one reading column (max 640px). Course: progress summary, then the three levels with
        their units in order. Unit: goal, grammar note and phrase list. Practice: one card at a time.
@@ -19,7 +20,9 @@
        systemRed and systemOrange. Text in green, red or orange on light backgrounds uses Apple's
        high-contrast variants (#248A3D, #D70015, #C93400) so it stays readable.
        Buttons follow Apple's button styles: filled systemBlue for a screen's main action, gray fill
-       with blue text for the rest, iOS segmented controls for choices; pressed buttons dim. */
+       with blue text for the rest, iOS segmented controls for choices; pressed buttons dim.
+       With a wallpaper (html.has-backdrop) every panel, control and caption is frosted glass over a
+       landscape, as on an iPhone: translucent white in light mode, smoked in dark mode. */
     :root {
       --bg: #f2f2f7;               /* systemGroupedBackground */
       --card: #ffffff;             /* secondarySystemGroupedBackground */
@@ -45,6 +48,11 @@
       --seg-line: rgba(60, 60, 67, 0.16);
       --danger: #ff3b30;                     /* systemRed, filled */
       --almost-soft: rgba(255, 149, 0, 0.14);
+      --glass: rgba(255, 255, 255, 0.6);
+      --glass-edge: rgba(255, 255, 255, 0.55);
+      --glass-shine: rgba(255, 255, 255, 0.8);
+      --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
+      --glass-blur: blur(26px) saturate(180%);
       --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       --radius: 14px;
       color-scheme: light;
@@ -59,6 +67,8 @@
         --fill: rgba(118, 118, 128, 0.24); --fill-press: rgba(118, 118, 128, 0.36); --seg-on: #636366;
         --seg-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 3px 1px rgba(0, 0, 0, 0.04); --seg-line: rgba(235, 235, 245, 0.16);
         --danger: #ff453a; --almost-soft: rgba(255, 159, 10, 0.18);
+        --glass: rgba(30, 30, 32, 0.55); --glass-edge: rgba(255, 255, 255, 0.13); --glass-shine: rgba(255, 255, 255, 0.14);
+        --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
       }
     }
     :root[data-theme="dark"] {
@@ -70,6 +80,8 @@
       --fill: rgba(118, 118, 128, 0.24); --fill-press: rgba(118, 118, 128, 0.36); --seg-on: #636366;
       --seg-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 3px 1px rgba(0, 0, 0, 0.04); --seg-line: rgba(235, 235, 245, 0.16);
       --danger: #ff453a; --almost-soft: rgba(255, 159, 10, 0.18);
+      --glass: rgba(30, 30, 32, 0.55); --glass-edge: rgba(255, 255, 255, 0.13); --glass-shine: rgba(255, 255, 255, 0.14);
+      --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
     }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -447,6 +459,68 @@
     .own s.mine { color: var(--miss); text-decoration-thickness: 1.5px; }
     .own .why { margin: 0; font-size: 15px; }
 
+    /* ---------- wallpaper and frosted glass ---------- */
+    .backdrop { display: none; }
+    html.has-backdrop body { background: transparent; }
+    .has-backdrop .backdrop {
+      display: block; position: fixed; inset: 0; z-index: -1; background: var(--bg) center / cover no-repeat;
+      opacity: 0; transition: opacity 0.7s ease;
+    }
+    .has-backdrop .backdrop.ready { opacity: 1; }
+    html.has-backdrop { --radius: 22px; --inset: rgba(118, 118, 128, 0.16); --line: rgba(60, 60, 67, 0.18); }
+    @media (prefers-color-scheme: dark) { html.has-backdrop:not([data-theme="light"]) { --inset: rgba(118, 118, 128, 0.3); --line: rgba(255, 255, 255, 0.12); } }
+    html.has-backdrop[data-theme="dark"] { --inset: rgba(118, 118, 128, 0.3); --line: rgba(255, 255, 255, 0.12); }
+    /* panels, controls and captions */
+    .has-backdrop :is(.card, .level, .view > header, .tracks, .modes, .back, .nav .count, .celebrate, .tip, .foot, .done-next, .view > .meter),
+    .has-backdrop .view > :is(.btn-stack, .btn-row, .grade) > .btn:not(.primary),
+    .has-backdrop .view > .btn:not(.primary) {
+      background: var(--glass);
+      -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--glass-edge);
+      box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-shine);
+    }
+    .has-backdrop .view > header { padding: 18px; border-radius: var(--radius); }
+    .has-backdrop .card { border-radius: var(--radius); }
+    /* a level is one glass panel: heading, bar, then its lessons as rows */
+    .has-backdrop .level { padding: 16px 16px 0; border-radius: var(--radius); overflow: hidden; }
+    .has-backdrop .level .units { margin: 2px -16px 0; background: transparent; box-shadow: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+    /* captions become glass capsules */
+    .has-backdrop :is(.tip, .foot, .done-next) { width: fit-content; max-width: 100%; margin-inline: auto; padding: 6px 14px; border-radius: 16px; color: var(--ink-2); }
+    .has-backdrop .back { padding: 0 14px 0 8px; min-height: 40px; border-radius: 20px; }
+    .has-backdrop .nav .count { padding: 7px 12px; border-radius: 16px; color: var(--ink); }
+    .has-backdrop .view > .meter { height: 10px; border-radius: 5px; padding: 2px; }
+    .has-backdrop .view > .meter i { border-radius: 3px; }
+    .has-backdrop :is(.tracks, .modes) { border-radius: 16px; }
+    .has-backdrop .modes { padding: 3px; }
+    .has-backdrop .modes .chip { border-radius: 12px; min-height: 34px; }
+    .has-backdrop .track { border-radius: 13px; }
+    .has-backdrop .celebrate { background: linear-gradient(var(--ok-soft), var(--ok-soft)), var(--glass); }
+    /* glass buttons: clear with a bright rim; the main one tinted blue with a sheen */
+    .has-backdrop .btn { border-radius: 16px; }
+    .has-backdrop .btn.primary {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 55%), var(--accent);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.08), 0 6px 18px rgba(0, 92, 230, 0.32);
+    }
+    .has-backdrop :is(.tools .btn, .own-card > .btn) { border-radius: 14px; }
+    .has-backdrop .tile { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+    /* the wallpaper picker */
+    .backdrop-option { flex: 1 1 100%; min-width: 0; flex-direction: column; align-items: stretch; gap: 8px; }
+    .swatches { display: flex; gap: 10px; min-width: 0; overflow-x: auto; padding: 4px 4px 2px; margin: 0 -4px; scrollbar-width: none; scroll-snap-type: x proximity; }
+    .swatches::-webkit-scrollbar { display: none; }
+    .swatch { flex: none; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 0; border: 0; background: none; scroll-snap-align: start; }
+    .swatch-img {
+      display: block; width: 58px; height: 40px; border-radius: 10px; background: var(--fill) center / cover no-repeat;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }
+    .swatch-img.plain { background: linear-gradient(135deg, transparent 47%, var(--ink-3) 48%, var(--ink-3) 52%, transparent 53%), var(--bg); box-shadow: inset 0 0 0 1px var(--line); }
+    .swatch[aria-checked="true"] .swatch-img { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--accent); }
+    .swatch:active .swatch-img { transform: scale(0.94); }
+    .swatch-label { font-size: 12px; font-weight: 500; color: var(--ink-2); }
+    .swatch[aria-checked="true"] .swatch-label { color: var(--accent); font-weight: 600; }
+    /* without blur, or with transparency turned down: solid panels */
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { html.has-backdrop { --glass: var(--card); } }
+    @media (prefers-reduced-transparency: reduce) { html.has-backdrop { --glass: var(--card); } }
+
     .foot { margin: 0; font-size: 13px; color: var(--ink-3); text-align: center; text-wrap: balance; }
 
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
@@ -543,6 +617,7 @@
     <symbol id="u-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
   </svg>
 
+  <div class="backdrop" id="backdrop" aria-hidden="true"></div>
   <div class="page">
     <main class="view" id="view" aria-live="polite"></main>
     <p class="foot" id="foot">Прогресс сохраняется только на этом устройстве.</p>

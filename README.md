@@ -91,6 +91,11 @@ Colours are Apple's system colours (iOS Human Interface Guidelines) in light and
 text on light backgrounds uses Apple's high-contrast variants. The course's buttons follow Apple's
 button styles: filled systemBlue for the main action, gray fill with blue text for the rest, iOS
 segmented controls for choices (goal, voice, speed, mode, track), and buttons dim when pressed.
+The course sits on a wallpaper with frosted-glass panels, controls and captions, as on an iPhone:
+translucent white in light mode, smoked in dark mode. "Фон" on the course page picks a lake at
+dawn, by day, at sunset or at dusk, the mountains, or no wallpaper; "Авто" (the default) follows the
+time of day. The pictures are WebP files in `public/backgrounds/` (with small thumbnails for the
+picker); the browser bar takes each picture's sky colour.
 
 Settings → Appearance: Automatic (follows the phone), Light or Dark. Full-screen (cinema) mode is
 always dark so the screen doesn't light up the room. The course uses the same setting.

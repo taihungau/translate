@@ -9,14 +9,59 @@ const APP_URL = "https://translate-hyperlinks-projects.vercel.app/";
 const view = document.getElementById("view");
 const foot = document.getElementById("foot");
 
-// The browser bar matches the page (the theme follows the phone unless Appearance is set in the app).
+// ---------------------------------------------------------------- wallpaper
+// A landscape behind frosted-glass panels, like an iPhone's Home Screen. "Авто" changes with the
+// time of day: dawn in the morning, the lake by day, sunset in the evening, dusk at night.
+const BACKDROP_DIR = globalThis.LEARN_BACKDROPS ?? "backgrounds/";
+const BACKDROPS = [
+  { id: "auto", label: "Авто" },
+  { id: "lake-dawn", label: "Рассвет", pos: "47% 50%", top: "#b7c0c7" },
+  { id: "lake-day", label: "День", pos: "48% 50%", top: "#91b8c8" },
+  { id: "lake-sunset", label: "Закат", pos: "50% 50%", top: "#53595b" },
+  { id: "lake-dusk", label: "Сумерки", pos: "48% 50%", top: "#5f576b" },
+  { id: "mountains", label: "Горы", pos: "62% 50%", top: "#818a8a" },
+  { id: "none", label: "Без фона" },
+];
+const backdropEl = document.getElementById("backdrop");
+let backdropChoice = BACKDROPS.some((b) => b.id === load("learnBackdrop", "auto")) ? load("learnBackdrop", "auto") : "auto";
+
+function backdropFor(choice, date = new Date()) {
+  if (choice !== "auto") return BACKDROPS.find((b) => b.id === choice);
+  const hour = date.getHours();
+  const id = hour < 5 || hour >= 21 ? "lake-dusk" : hour < 10 ? "lake-dawn" : hour < 17 ? "lake-day" : "lake-sunset";
+  return BACKDROPS.find((b) => b.id === id);
+}
+
+let shownBackdrop = null;
+function applyBackdrop() {
+  const backdrop = backdropFor(backdropChoice);
+  const on = backdrop.id !== "none";
+  document.documentElement.classList.toggle("has-backdrop", on);
+  if (on && shownBackdrop !== backdrop.id && backdropEl) {
+    const url = `${BACKDROP_DIR}${backdrop.id}.webp`;
+    const img = new Image();
+    img.onload = () => {
+      if (backdropFor(backdropChoice).id !== backdrop.id) return; // another one was picked meanwhile
+      backdropEl.style.backgroundImage = `url("${url}")`;
+      backdropEl.style.backgroundPosition = backdrop.pos;
+      backdropEl.classList.add("ready");
+    };
+    img.src = url;
+  }
+  shownBackdrop = on ? backdrop.id : null;
+  matchBrowserBar();
+}
+
+// The browser bar matches the page: the wallpaper's sky, or the theme's background.
+// (The theme follows the phone unless Appearance is set in the app.)
 const darkQuery = matchMedia("(prefers-color-scheme: dark)");
 function matchBrowserBar() {
   const theme = document.documentElement.dataset.theme;
   const dark = theme ? theme === "dark" : darkQuery.matches;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? "#000000" : "#f2f2f7");
+  const backdrop = backdropFor(backdropChoice);
+  const color = backdrop.top ?? (dark ? "#000000" : "#f2f2f7");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", color);
 }
-matchBrowserBar();
 darkQuery.addEventListener("change", matchBrowserBar);
 
 // ---------------------------------------------------------------- saved on this device
@@ -31,6 +76,8 @@ function load(key, fallback) {
 function save(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage full or blocked */ }
 }
+applyBackdrop();
+setInterval(() => { if (backdropChoice === "auto") applyBackdrop(); }, 10 * 60 * 1000); // follow the time of day
 const progress = load("learnProgress", {}); // English phrase → { box, due }
 const tests = load("learnTests", {}); // lesson id → { best, last, total, at }: written test results
 let mode = load("learnMode", "understand"); // "understand": English → Russian; "speak": Russian → English
@@ -392,7 +439,30 @@ function todayCard() {
         ? h("div", { class: "option" }, h("span", { class: "option-label" }, "Скорость"),
             speedChips(() => speak("This is how fast I'll read the phrases.")))
         : null,
+      backdropPicker(),
     ),
+  );
+}
+
+// Wallpaper choice: small pictures, like the iPhone's wallpaper gallery.
+function backdropPicker() {
+  const thumb = (id) => `url("${BACKDROP_DIR}${id}-thumb.webp")`;
+  const lakes = ["lake-dawn", "lake-day", "lake-sunset", "lake-dusk"];
+  const look = (b) => b.id === "auto"
+    ? `background: ${lakes.map((id, i) => `${thumb(id)} ${i % 2 ? "100%" : "0"} ${i < 2 ? "0" : "100%"} / 50% 50% no-repeat`).join(", ")}`
+    : b.id === "none" ? null : `background-image: ${thumb(b.id)}`;
+  return h("div", { class: "option backdrop-option" },
+    h("span", { class: "option-label", id: "bgLabel" }, "Фон"),
+    h("div", { class: "swatches", role: "radiogroup", "aria-labelledby": "bgLabel" },
+      BACKDROPS.map((b) => h("button", {
+        class: "swatch", type: "button", role: "radio", "aria-checked": String(backdropChoice === b.id), "data-backdrop": b.id,
+        onclick: () => {
+          backdropChoice = b.id;
+          save("learnBackdrop", b.id);
+          applyBackdrop();
+          for (const s of document.querySelectorAll(".swatch")) s.setAttribute("aria-checked", String(s.dataset.backdrop === b.id));
+        },
+      }, h("span", { class: `swatch-img${b.id === "none" ? " plain" : ""}`, style: look(b) }), h("span", { class: "swatch-label" }, b.label)))),
   );
 }
 
