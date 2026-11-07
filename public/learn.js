@@ -3,6 +3,7 @@
 // app, phrases are read aloud by Deepgram's American voices, the speaking check listens with the
 // same speech recognition as live subtitles, and sentences she writes herself are checked by Claude.
 import { TRACKS, LEVELS, LESSONS } from "./lessons.js";
+import { mergeProgress, normalizeCode, SYNC_KEYS } from "./learn-sync.js";
 import { compareSpeech, checkWriting, testQuestions, choices, grade, isLearned, isDue, verdict, dayKey, streak } from "./learn-core.js";
 
 const APP_URL = "https://translate-hyperlinks-projects.vercel.app/";
@@ -113,7 +114,12 @@ function load(key, fallback) {
 }
 function save(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage full or blocked */ }
+  if (SYNC_KEYS.includes(key)) scheduleSync(); // progress also goes to the server, under her code
 }
+// Saving progress under a personal code (see "progress code" below).
+let syncEnabled = false; // the app's server has somewhere to keep progress
+let syncDirty = false; // changed since the last save to the server
+let syncTimer = null;
 applyBackdrop();
 setInterval(() => { if (backdropChoice === "auto") applyBackdrop(); }, 10 * 60 * 1000); // follow the time of day
 const progress = load("learnProgress", {}); // English phrase → { box, due }
@@ -340,6 +346,7 @@ async function detectApp() {
     inApp = true;
     serverTts = Boolean(config.tts);
     writingCheck = Boolean(config.writing);
+    syncEnabled = Boolean(config.sync);
     if (config.cloudSpeech) ({ CloudRecognizer: Recognizer } = await import("./cloud-asr.js"));
     if (load("heardPhrases", []).length) {
       const { pronounce, loadDictionary } = await import("./pronounce.js");
@@ -349,6 +356,7 @@ async function detectApp() {
   } catch {
     return; // not served by the app
   }
+  if (syncEnabled) startSync();
   // Show what just became available, without restarting a practice session or losing an answer
   // being typed.
   if (testRun && testRun.index < testRun.questions.length) return showFoot();
@@ -363,7 +371,7 @@ async function detectApp() {
 }
 
 function showFoot() {
-  foot.replaceChildren("Прогресс сохраняется только на этом устройстве.");
+  foot.replaceChildren(syncEnabled && syncCode() ? "Прогресс сохраняется на сервере под вашим кодом." : "Прогресс сохраняется только на этом устройстве.");
   if (!inApp) {
     foot.append(" Проверка произношения голосом работает ", h("a", { href: `${APP_URL}learn.html`, target: "_blank", rel: "noopener" }, "в приложении"), ".");
   }
@@ -722,6 +730,7 @@ function renderCourse(track = currentTrack) {
       h("p", { class: "lede" }, `${LESSONS.length} ${plural(LESSONS.length, "урок", "урока", "уроков")} в трёх разделах и семи уровнях: от A (первые слова) до G (как носитель). В каждом уроке — пять заданий: карточки, аудирование, чтение, говорение и письмо.`),
     ),
     todayCard(),
+    syncEnabled ? syncCard() : null,
     h("nav", { class: "tracks", "aria-label": "Разделы курса" },
       TRACKS.map((t) => h("a", { class: "track", href: `#${t.id}`, "aria-current": t.id === track ? "page" : null },
         lessonIcon(t.icon, "track-icon"), h("span", {}, t.title)))),
@@ -1602,8 +1611,209 @@ function renderDrillResults() {
   );
 }
 
+// ---------------------------------------------------------------- progress code
+// On the app's server, progress is also saved under a personal code (K7QM-4TZP-9HXW), so it
+// follows her to any phone: the first save makes the code, every change after it is saved within
+// a couple of seconds, and on another phone she types the code (or opens a link with it) to get
+// everything back. The server merges, so two phones never overwrite each other.
+const SYNC_CODE_KEY = "learnSyncCode";
+const syncState = { saving: false, savedAt: null, failed: false, joining: false, joinError: null, notice: null };
+let syncRequest = null;
+
+function syncCode() {
+  try { return localStorage.getItem(SYNC_CODE_KEY) || ""; } catch { return ""; }
+}
+function setSyncCode(code) {
+  try { if (code) localStorage.setItem(SYNC_CODE_KEY, code); else localStorage.removeItem(SYNC_CODE_KEY); } catch { /* storage blocked */ }
+}
+const localProgress = () => ({ learnProgress: progress, learnTests: tests, learnSkills: skills, learnStats: stats });
+const hasProgress = () => Object.keys(progress).length + Object.keys(tests).length + Object.keys(skills).length + Object.keys(stats.days).length > 0;
+
+/** Takes merged progress as this device's own, in memory and in storage, without saving it back. */
+function adoptProgress(data) {
+  const before = JSON.stringify(localProgress());
+  for (const [key, target] of [["learnProgress", progress], ["learnTests", tests], ["learnSkills", skills], ["learnStats", stats]]) {
+    for (const k of Object.keys(target)) delete target[k];
+    Object.assign(target, data[key]);
+    try { localStorage.setItem(key, JSON.stringify(target)); } catch { /* storage full or blocked */ }
+  }
+  return before !== JSON.stringify(localProgress());
+}
+
+function postProgress(code, keepalive = false) {
+  const body = JSON.stringify(code ? { code, data: localProgress() } : { data: localProgress() });
+  return fetch("api/progress", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Access-Code": accessCode() },
+    body,
+    keepalive: keepalive && body.length < 60000, // the browser allows small requests to outlive the page
+  });
+}
+
+function scheduleSync() {
+  syncDirty = true;
+  if (!syncEnabled) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncNow, 1500);
+}
+
+async function syncNow(keepalive = false) {
+  if (!syncEnabled) return;
+  if (syncRequest) { syncDirty = true; return; } // one at a time; the next starts when this ends
+  clearTimeout(syncTimer);
+  const code = syncCode();
+  if (!code && !hasProgress()) return; // the code is made with the first card
+  syncDirty = false;
+  syncState.saving = true;
+  refreshSyncCard();
+  syncRequest = (async () => {
+    let res = await postProgress(code, keepalive);
+    if (res.status === 404 && code) res = await postProgress("", keepalive); // the code is gone: make a new one
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.code) throw new Error(body.error || `HTTP ${res.status}`);
+    if (code && body.code !== code) syncState.notice = "Старый код не найден — создан новый.";
+    setSyncCode(body.code);
+    // The server's copy, plus anything done on this phone while it was saving.
+    const changed = adoptProgress(mergeProgress(body.data, localProgress()));
+    syncState.failed = false;
+    syncState.savedAt = Date.now();
+    if (changed && !session && !testRun && !drill) route(null, true); // show progress from another phone
+  })();
+  try {
+    await syncRequest;
+  } catch {
+    syncState.failed = true;
+  } finally {
+    syncRequest = null;
+    syncState.saving = false;
+    refreshSyncCard();
+    showFoot();
+    if (syncDirty) scheduleSync();
+  }
+}
+
+/** Uses progress saved under someone's code on this phone. Returns an error message, or null. */
+async function joinCode(input) {
+  const code = normalizeCode(input);
+  if (!code) return "Код выглядит так: XXXX-XXXX-XXXX — 12 латинских букв и цифр.";
+  let res;
+  try {
+    res = await postProgress(code);
+  } catch {
+    return "Нет связи с сервером. Попробуйте ещё раз.";
+  }
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 404) return "Такого кода нет. Проверьте буквы и цифры.";
+  if (!res.ok || !body.code) return "Не удалось загрузить прогресс. Попробуйте ещё раз.";
+  setSyncCode(body.code);
+  adoptProgress(mergeProgress(body.data, localProgress()));
+  syncState.savedAt = Date.now();
+  syncState.failed = false;
+  syncState.notice = "Прогресс загружен.";
+  if (!session && !testRun && !drill) route(null, true);
+  showFoot();
+  return null;
+}
+
+async function startSync() {
+  // A link with a code (…/learn.html?code=K7QM-4TZP-9HXW) opens that progress on this phone.
+  const linked = new URLSearchParams(location.search).get("code");
+  if (linked) {
+    history.replaceState(null, "", location.pathname + location.hash);
+    const code = normalizeCode(linked);
+    const mine = syncCode();
+    if (code && code !== mine && (!mine || confirm(`Открыть прогресс с кодом ${code}? Прогресс этого телефона добавится к нему.`))) {
+      const error = await joinCode(code);
+      if (error) { syncState.joining = true; syncState.joinError = error; refreshSyncCard(); }
+      return;
+    }
+  }
+  syncNow(); // loads progress saved from other phones, or makes the code if there is progress already
+}
+addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && syncDirty) syncNow(true); });
+
+function syncStatusText() {
+  if (syncState.saving) return "Сохраняем…";
+  if (syncState.failed) return "Нет связи — сохраним, когда появится интернет";
+  if (syncState.savedAt) return `Сохранено в ${new Date(syncState.savedAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
+  return syncCode() ? "Сохраняется автоматически" : "";
+}
+
+function syncCard() {
+  return h("section", { class: "card sync-card", id: "syncCard", "aria-label": "Прогресс на сервере" }, syncCardContent());
+}
+function refreshSyncCard() {
+  document.getElementById("syncCard")?.replaceChildren(...syncCardContent());
+}
+
+function syncCardContent() {
+  const code = syncCode();
+  const head = h("div", { class: "sync-head" },
+    lessonIcon(code ? "cloud-check" : "cloud", `tile small${code ? " ok" : ""}`),
+    h("div", {}, h("b", {}, "Мой прогресс"), h("small", { class: `sync-status${syncState.failed ? " bad" : ""}`, role: "status" }, syncStatusText())));
+  const notice = syncState.notice ? h("p", { class: "sync-notice" }, syncState.notice) : null;
+
+  if (syncState.joining) {
+    const input = h("input", {
+      class: "code-input", id: "syncInput", type: "text", placeholder: "XXXX-XXXX-XXXX", "aria-label": "Код прогресса",
+      autocapitalize: "characters", autocomplete: "off", autocorrect: "off", spellcheck: "false", maxlength: "20", enterkeyhint: "go",
+    });
+    return [head,
+      h("p", { class: "sync-note" }, "Введите код с другого телефона: прогресс загрузится сюда, а то, что вы уже прошли здесь, добавится к нему."),
+      h("form", {
+        class: "sync-join",
+        onsubmit: async (e) => {
+          e.preventDefault();
+          const button = e.currentTarget.querySelector("button[type=submit]");
+          button.disabled = true;
+          const error = await joinCode(input.value);
+          syncState.joinError = error;
+          if (!error) syncState.joining = false;
+          refreshSyncCard();
+        },
+      }, input,
+        syncState.joinError ? h("p", { class: "sync-error", role: "alert" }, syncState.joinError) : null,
+        h("div", { class: "btn-row" },
+          h("button", { class: "btn primary", type: "submit" }, icon("key-round", "u"), "Войти"),
+          h("button", { class: "btn", type: "button", onclick: () => { syncState.joining = false; syncState.joinError = null; refreshSyncCard(); } }, "Отмена"))),
+    ];
+  }
+  const askCode = h("button", { class: "btn small", type: "button", onclick: () => { syncState.joining = true; syncState.notice = null; refreshSyncCard(); document.getElementById("syncInput")?.focus(); } },
+    icon("key-round", "u"), code ? "Ввести другой код" : "У меня уже есть код");
+  if (!code) {
+    return [head,
+      h("p", { class: "sync-note" }, "После первой карточки прогресс сохранится на сервере, и здесь появится ваш личный код. С ним можно продолжить на любом телефоне."),
+      notice, askCode];
+  }
+  return [head,
+    h("div", { class: "sync-code", "aria-label": `Ваш код: ${[...code].join(" ")}` }, code),
+    h("p", { class: "sync-note" }, "На другом телефоне откройте курс и введите этот код — прогресс перенесётся. Код — как ключ: не показывайте его посторонним."),
+    notice,
+    h("div", { class: "btn-row" },
+      h("button", { class: "btn small", type: "button", onclick: () => shareCode(code) }, icon("share", "u"), navigator.share ? "Поделиться" : "Скопировать ссылку"),
+      askCode),
+  ];
+}
+
+async function shareCode(code) {
+  const url = `${location.origin}${location.pathname}?code=${code}`;
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: "Мой прогресс · Курс английского", text: `Код прогресса: ${code}`, url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    syncState.notice = "Ссылка скопирована. Откройте её на другом телефоне.";
+  } catch (err) {
+    if (err?.name === "AbortError") return; // closed the share sheet
+    syncState.notice = `Код: ${code}`;
+  }
+  refreshSyncCard();
+}
+
 // ---------------------------------------------------------------- navigation (#unit-cafe, #practice-cafe, #test-cafe, #listen-cafe…)
-function route() {
+function route(_event, keepScroll = false) {
+  const top = () => { if (!keepScroll) scrollTo(0, 0); };
   attempt?.cancel();
   stopSound();
   const hash = location.hash.slice(1);
@@ -1612,28 +1822,28 @@ function route() {
   if (!skill) drill = null;
   if (skill) {
     const lesson = LESSONS.find((l) => l.id === skill[2]);
-    if (lesson) { session = null; renderDrill(skill[1], lesson); return scrollTo(0, 0); }
+    if (lesson) { session = null; renderDrill(skill[1], lesson); return top(); }
   }
   if (hash === "grammar-plan") {
     session = null;
     renderGrammarPlan();
-    return scrollTo(0, 0);
+    return top();
   }
   if (hash.startsWith("unit-")) {
     const lesson = LESSONS.find((l) => l.id === hash.slice(5));
-    if (lesson) { session = null; renderUnit(lesson); return scrollTo(0, 0); }
+    if (lesson) { session = null; renderUnit(lesson); return top(); }
   }
   if (hash.startsWith("practice-")) {
     const deck = deckFor(hash.slice(9));
-    if (deck?.phrases.length) { renderPractice(deck); return scrollTo(0, 0); }
+    if (deck?.phrases.length) { renderPractice(deck); return top(); }
   }
   if (hash.startsWith("test-")) {
     const lesson = LESSONS.find((l) => l.id === hash.slice(5));
-    if (lesson) { session = null; renderTest(lesson); return scrollTo(0, 0); }
+    if (lesson) { session = null; renderTest(lesson); return top(); }
   }
   session = null;
   renderCourse(TRACKS.some((t) => t.id === hash) ? hash : currentTrack);
-  scrollTo(0, 0);
+  top();
 }
 addEventListener("hashchange", route);
 route();

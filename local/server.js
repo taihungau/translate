@@ -3,12 +3,12 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleTranslate, handleSpeechToken, handleTts, handleCheckWriting, speechConfig } from "../lib/handler.js";
+import { handleTranslate, handleSpeechToken, handleTts, handleCheckWriting, handleProgress, speechConfig } from "../lib/handler.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(here, "..", "public");
 const PORT = Number(process.env.PORT) || 3000;
-const MAX_BODY_BYTES = 256 * 1024;
+const MAX_BODY_BYTES = 512 * 1024;
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -64,6 +64,7 @@ async function serveStatic(req, res) {
 const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/api/translate") return handleJsonRequest(req, res, handleTranslate);
   if (req.method === "POST" && req.url === "/api/check-writing") return handleJsonRequest(req, res, handleCheckWriting);
+  if (req.method === "POST" && req.url === "/api/progress") return handleJsonRequest(req, res, handleProgress);
   if (req.method === "POST" && req.url === "/api/speech-token") {
     return handleSpeechToken(req.headers["x-access-code"]).then(({ status, body }) => sendJson(res, status, body));
   }

@@ -93,7 +93,16 @@ unit with its own icon.
   is set on the server.
 - **Spaced repetition:** a known phrase comes back after 1, 3, 7, 14 and 30 days; a forgotten one
   comes back in a few cards. **"Из фильмов"** reviews phrases heard in live subtitles.
-- Progress stays on the device (browser storage).
+- **Progress follows a person with a personal code.** With a database connected, the first card
+  saves progress on the server under a code like `K7QM-4TZP-9HXW` (12 letters and digits without
+  look-alikes), shown in "Мой прогресс" on the course page. Every change is saved within a couple
+  of seconds; on another phone she types the code, or opens the link "Поделиться" makes
+  (`learn.html?code=…`), and everything comes back. `POST /api/progress` merges what a phone sends
+  with what is stored (`public/learn-sync.js`, the same merge on both sides): each card keeps its
+  latest answer, each test or exercise its best score, each day its larger card count, so two
+  phones never overwrite each other. Codes are kept two years after the last save.
+  **Setup:** on Vercel, Storage → Upstash → Redis (free) → connect to the project (any prefix),
+  then redeploy. Without it, or in the published copy, progress stays in the browser.
 - Lesson icons: [Lucide](https://lucide.dev) 1.56.0 (ISC; some from Feather, MIT), drawn from a
   sprite inside `learn.html`; licence texts in `public/icons-LICENSE.txt`.
 

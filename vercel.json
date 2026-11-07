@@ -19,6 +19,9 @@
     },
     "api/check-writing.js": {
       "maxDuration": 30
+    },
+    "api/progress.js": {
+      "maxDuration": 10
     }
   }
 }
