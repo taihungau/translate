@@ -10,7 +10,8 @@
   <title>Курс английского</title>
   <meta name="claude:viewport-fit-sides" content="cover">
   <!-- Same appearance setting as the subtitles app, applied before the first paint. -->
-  <script>try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+  <script>document.documentElement.dataset.autoTheme = document.documentElement.dataset.theme || "";
+  try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
   try { if (localStorage.getItem("learnBackdrop") !== '"none"') document.documentElement.classList.add("has-backdrop"); } catch { document.documentElement.classList.add("has-backdrop"); }</script>
   <style>
     /* Layout: one reading column (max 640px). Course: progress summary, then the three levels with
@@ -152,6 +153,15 @@
       transition: background-color 0.2s ease, box-shadow 0.2s ease;
     }
     .chip[aria-checked="true"] { background: var(--seg-on); box-shadow: var(--seg-shadow); font-weight: 600; }
+    .chip:has(svg) { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+    .chip svg.i { width: 15px; height: 15px; }
+    /* light / dark: a round sun or moon button */
+    .theme-toggle {
+      flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; display: grid; place-items: center;
+      background: var(--fill); color: var(--accent); transition: opacity 0.25s ease;
+    }
+    .theme-toggle svg.i { width: 20px; height: 20px; }
+    .theme-toggle:active { opacity: 0.55; transition: none; }
     .chip:active:not([aria-checked="true"]) { opacity: 0.55; }
     /* hairlines between segments, hidden beside the selected one */
     .chip + .chip::before { content: ""; position: absolute; left: -0.5px; top: 7px; bottom: 7px; width: 1px; background: var(--seg-line); transition: opacity 0.2s ease; }
@@ -471,7 +481,7 @@
     @media (prefers-color-scheme: dark) { html.has-backdrop:not([data-theme="light"]) { --inset: rgba(118, 118, 128, 0.3); --line: rgba(255, 255, 255, 0.12); } }
     html.has-backdrop[data-theme="dark"] { --inset: rgba(118, 118, 128, 0.3); --line: rgba(255, 255, 255, 0.12); }
     /* panels, controls and captions */
-    .has-backdrop :is(.card, .level, .view > header, .tracks, .modes, .back, .nav .count, .celebrate, .tip, .foot, .done-next, .view > .meter),
+    .has-backdrop :is(.card, .level, .view > header, .tracks, .modes, .back, .nav .count, .theme-toggle, .celebrate, .tip, .foot, .done-next, .view > .meter),
     .has-backdrop .view > :is(.btn-stack, .btn-row, .grade) > .btn:not(.primary),
     .has-backdrop .view > .btn:not(.primary) {
       background: var(--glass);
@@ -707,6 +717,8 @@
     <symbol id="u-headphones" viewBox="0 0 24 24"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></symbol>
     <symbol id="u-book-open-text" viewBox="0 0 24 24"><path d="M12 5v16"/><path d="M16 13h2"/><path d="M16 9h2"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/><path d="M6 13h2"/><path d="M6 9h2"/></symbol>
     <symbol id="u-mic" viewBox="0 0 24 24"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></symbol>
+    <symbol id="u-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></symbol>
+    <symbol id="u-sun-moon" viewBox="0 0 24 24"><path d="M12 2v2"/><path d="M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715"/><path d="M16 12a4 4 0 0 0-4-4"/><path d="m19 5-1.256 1.256"/><path d="M20 12h2"/></symbol>
   </svg>
 
   <div class="backdrop" id="backdrop" aria-hidden="true"></div>

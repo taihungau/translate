@@ -62,7 +62,45 @@ function matchBrowserBar() {
   const color = backdrop.top ?? (dark ? "#000000" : "#f2f2f7");
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", color);
 }
-darkQuery.addEventListener("change", matchBrowserBar);
+darkQuery.addEventListener("change", () => { matchBrowserBar(); refreshThemeToggle(); });
+
+// Light or dark. "Авто" follows the phone (or the app showing the page); a choice is saved under
+// the same key as the subtitles app's Appearance setting, so both look the same.
+const THEMES = [["", "Авто", "sun-moon"], ["light", "Светлая", "sun"], ["dark", "Тёмная", "moon"]];
+function themeChoice() {
+  try {
+    const t = localStorage.getItem("theme");
+    return t === "light" || t === "dark" ? t : "";
+  } catch {
+    return "";
+  }
+}
+function isDark() {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === "dark" : darkQuery.matches;
+}
+function setTheme(choice) {
+  const root = document.documentElement;
+  try { localStorage.setItem("theme", choice); } catch { /* storage blocked: still applies until reload */ }
+  if (choice) root.dataset.theme = choice;
+  else if (root.dataset.autoTheme) root.dataset.theme = root.dataset.autoTheme; // what the page was given
+  else delete root.dataset.theme;
+  matchBrowserBar();
+  for (const chip of document.querySelectorAll(".theme-choice .chip")) chip.setAttribute("aria-checked", String(chip.dataset.theme === choice));
+  refreshThemeToggle();
+}
+// The round sun / moon button: one tap switches between light and dark.
+function themeToggle() {
+  const dark = isDark();
+  return h("button", {
+    class: "theme-toggle", id: "themeToggle", type: "button",
+    "aria-label": dark ? "Включить светлую тему" : "Включить тёмную тему", title: dark ? "Светлая тема" : "Тёмная тема",
+    onclick: () => setTheme(isDark() ? "light" : "dark"),
+  }, icon(dark ? "sun" : "moon", "u"));
+}
+function refreshThemeToggle() {
+  document.getElementById("themeToggle")?.replaceWith(themeToggle());
+}
 
 // ---------------------------------------------------------------- saved on this device
 function load(key, fallback) {
@@ -441,6 +479,12 @@ function todayCard() {
         ? h("div", { class: "option" }, h("span", { class: "option-label" }, "Скорость"),
             speedChips(() => speak("This is how fast I'll read the phrases.")))
         : null,
+      h("div", { class: "option" }, h("span", { class: "option-label", id: "themeLabel" }, "Тема"),
+        h("div", { class: "chips theme-choice", role: "radiogroup", "aria-labelledby": "themeLabel" },
+          THEMES.map(([value, label, glyph]) => h("button", {
+            class: "chip", type: "button", role: "radio", "aria-checked": String(themeChoice() === value), "data-theme": value,
+            onclick: () => setTheme(value),
+          }, icon(glyph, "u"), label)))),
       backdropPicker(),
     ),
   );
@@ -671,6 +715,7 @@ function renderCourse(track = currentTrack) {
   setView(
     h("div", { class: "nav" },
       inApp ? backLink("./", "Субтитры") : h("a", { class: "back", href: APP_URL, target: "_blank", rel: "noopener" }, icon("back"), "Субтитры"),
+      themeToggle(),
     ),
     h("header", {},
       h("h1", {}, "Курс английского"),

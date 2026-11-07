@@ -108,6 +108,9 @@ translucent white in light mode, smoked in dark mode. "Фон" on the course pag
 dawn, by day, at sunset or at dusk, the mountains, or no wallpaper; "Авто" (the default) follows the
 time of day. The pictures are WebP files in `public/backgrounds/` (with small thumbnails for the
 picker); the browser bar takes each picture's sky colour.
+A sun/moon button at the top of the course switches between light and dark in one tap, and
+"Тема" (Авто / Светлая / Тёмная) sets it for good; it is the same setting as the subtitles app's
+Appearance, so both pages match. "Авто" follows the phone, or the app the page is shown in.
 
 Settings → Appearance: Automatic (follows the phone), Light or Dark. Full-screen (cinema) mode is
 always dark so the screen doesn't light up the room. The course uses the same setting.
