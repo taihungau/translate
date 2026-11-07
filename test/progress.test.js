@@ -8,16 +8,19 @@ import { INTERVALS } from "../public/learn-core.js";
 const DAY = 24 * 60 * 60 * 1000;
 const card = (box, reviewedAt) => ({ box, due: reviewedAt + INTERVALS[box] * DAY });
 
-test("codes: 12 unambiguous characters in three groups, typed any way", () => {
+test("codes: 4 unambiguous characters, typed any way; the first 12-character codes still read", () => {
+  assert.equal(normalizeCode("k7qm"), "K7QM");
+  assert.equal(normalizeCode(" k7-qm "), "K7QM");
   assert.equal(normalizeCode("k7qm 4tzp-9hxw"), "K7QM-4TZP-9HXW");
-  assert.equal(normalizeCode("K7QM4TZP9HXW"), "K7QM-4TZP-9HXW");
-  assert.equal(normalizeCode("K7QM-4TZP-9HX"), null, "too short");
-  assert.equal(normalizeCode("O7QM-4TZP-9HXW"), null, "O is not used: it looks like 0");
+  assert.equal(normalizeCode("K7Q"), null, "too short");
+  assert.equal(normalizeCode("K7QMX"), null, "five");
+  assert.equal(normalizeCode("O7QM"), null, "O is not used: it looks like 0");
   assert.equal(normalizeCode(null), null);
-  for (let i = 0; i < 50; i++) { const c = newCode(); assert.equal(normalizeCode(c), c); }
-  const code = newCode();
-  assert.match(code, /^[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}$/);
-  assert.ok([...code.replace(/-/g, "")].every((c) => CODE_ALPHABET.includes(c)));
+  for (let i = 0; i < 50; i++) {
+    const c = newCode();
+    assert.match(c, /^[2-9A-Z]{4}$/);
+    assert.equal(normalizeCode(c), c);
+  }
   assert.ok(!/[01OIL]/.test(CODE_ALPHABET));
 });
 
@@ -87,6 +90,8 @@ async function withRedis(fn) {
       if (rest.includes("NX") && db.has(key)) result = null;
       else { db.set(key, value); result = "OK"; }
     }
+    if (name === "INCR") { result = Number(db.get(key) ?? 0) + 1; db.set(key, String(result)); }
+    if (name === "EXPIRE") result = 1;
     return new Response(JSON.stringify({ result }), { status: 200 });
   };
   try { return await fn(db, calls); } finally { globalThis.fetch = realFetch; }
@@ -100,7 +105,7 @@ test("the first save makes a code; later saves from any phone merge into it", ()
     const first = await handleProgress({ data: { learnProgress: { "Hello!": card(1, 100 * DAY) } } });
     assert.equal(first.status, 201);
     const { code } = first.body;
-    assert.match(code, /^[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}$/);
+    assert.match(code, /^[2-9A-Z]{4}$/);
     assert.equal(calls[0].url, "https://test.upstash.io");
     assert.equal(calls[0].auth, "Bearer secret");
     assert.deepEqual(calls[0].command.slice(0, 2), ["SET", `progress:${code}`]);
@@ -118,7 +123,7 @@ test("the first save makes a code; later saves from any phone merge into it", ()
 
 test("unknown codes, bad requests, a missing database and the access code", () =>
   withEnv(env, () => withRedis(async () => {
-    assert.equal((await handleProgress({ code: "K7QM-4TZP-9HXW", data: {} })).status, 404);
+    assert.equal((await handleProgress({ code: "K7QM", data: {} })).status, 404);
     assert.equal((await handleProgress({ code: "nope", data: {} })).status, 400);
     assert.equal((await handleProgress({ data: [] })).status, 400);
     assert.equal((await handleProgress(null)).status, 400);
@@ -134,4 +139,20 @@ test("unknown codes, bad requests, a missing database and the access code", () =
     await withEnv({ KV_REST_API_URL: undefined, KV_REST_API_TOKEN: undefined, STORAGE_REST_API_URL: "https://s.upstash.io", STORAGE_REST_API_TOKEN: "t" }, async () => {
       assert.equal(speechConfig().sync, true, "any prefix chosen when connecting the database");
     });
+  })));
+
+test("an old 12-character code moves to a short one, and every phone follows", () =>
+  withEnv(env, () => withRedis(async (db) => {
+    const old = "K7QM-4TZP-9HXW";
+    db.set(`progress:${old}`, JSON.stringify({ v: 1, data: { learnProgress: { "Hello!": card(1, 100 * DAY) } } }));
+    const phoneA = await handleProgress({ code: old, data: { learnProgress: { "Bye.": card(1, 101 * DAY) } } });
+    assert.equal(phoneA.status, 200);
+    const short = phoneA.body.code;
+    assert.match(short, /^[2-9A-Z]{4}$/);
+    assert.deepEqual(Object.keys(phoneA.body.data.learnProgress).sort(), ["Bye.", "Hello!"]);
+    assert.equal(JSON.parse(db.get(`progress:${old}`)).movedTo, short, "the old code points to the new one");
+    const phoneB = await handleProgress({ code: old.toLowerCase(), data: { learnProgress: { "Where?": card(1, 102 * DAY) } } });
+    assert.equal(phoneB.body.code, short, "a phone with the old code is moved to the same short code");
+    assert.deepEqual(Object.keys(phoneB.body.data.learnProgress).sort(), ["Bye.", "Hello!", "Where?"]);
+    assert.deepEqual(Object.keys(JSON.parse(db.get(`progress:${short}`)).data.learnProgress).sort(), ["Bye.", "Hello!", "Where?"]);
   })));

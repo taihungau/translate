@@ -94,8 +94,9 @@ unit with its own icon.
 - **Spaced repetition:** a known phrase comes back after 1, 3, 7, 14 and 30 days; a forgotten one
   comes back in a few cards. **"Из фильмов"** reviews phrases heard in live subtitles.
 - **Progress follows a person with a personal code.** With a database connected, the first card
-  saves progress on the server under a code like `K7QM-4TZP-9HXW` (12 letters and digits without
-  look-alikes), shown in "Мой прогресс" on the course page. Every change is saved within a couple
+  saves progress on the server under a code like `K7QM` (4 letters and digits without look-alikes;
+  the first, 12-character codes still work and are moved to short ones), shown in "Мой прогресс" on
+  the course page. Every change is saved within a couple
   of seconds; on another phone she types the code, or opens the link "Поделиться" makes
   (`learn.html?code=…`), and everything comes back. `POST /api/progress` merges what a phone sends
   with what is stored (`public/learn-sync.js`, the same merge on both sides): each card keeps its

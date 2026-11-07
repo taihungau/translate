@@ -1,4 +1,4 @@
-// Course progress saved under a personal code (K7QM-4TZP-9HXW), so it follows a person to any
+// Course progress saved under a personal code (K7QM), so it follows a person to any
 // device. The same merge runs on the server (combining what is stored with what a device sends)
 // and on the device (keeping anything done while a save was on its way).
 import { INTERVALS } from "./learn-core.js";
@@ -8,11 +8,14 @@ export const SYNC_KEYS = ["learnProgress", "learnTests", "learnSkills", "learnSt
 /** Codes use letters and digits that can't be mistaken for each other (no 0/O, 1/I/L). */
 export const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 
-/** "k7qm 4tzp-9hxw" → "K7QM-4TZP-9HXW", or null when it isn't a code. */
+/**
+ * "k7qm" → "K7QM": codes are 4 characters. The first codes were 12 ("K7QM-4TZP-9HXW"); those still
+ * work, and the server moves them to a short one. Null when it isn't a code.
+ */
 export function normalizeCode(text) {
   const s = String(text ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
-  if (s.length !== 12 || [...s].some((c) => !CODE_ALPHABET.includes(c))) return null;
-  return `${s.slice(0, 4)}-${s.slice(4, 8)}-${s.slice(8)}`;
+  if ((s.length !== 4 && s.length !== 12) || [...s].some((c) => !CODE_ALPHABET.includes(c))) return null;
+  return s.length === 4 ? s : `${s.slice(0, 4)}-${s.slice(4, 8)}-${s.slice(8)}`;
 }
 
 const SYNC_DAY = 24 * 60 * 60 * 1000;

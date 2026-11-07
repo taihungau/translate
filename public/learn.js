@@ -1612,7 +1612,7 @@ function renderDrillResults() {
 }
 
 // ---------------------------------------------------------------- progress code
-// On the app's server, progress is also saved under a personal code (K7QM-4TZP-9HXW), so it
+// On the app's server, progress is also saved under a personal code (K7QM), so it
 // follows her to any phone: the first save makes the code, every change after it is saved within
 // a couple of seconds, and on another phone she types the code (or opens a link with it) to get
 // everything back. The server merges, so two phones never overwrite each other.
@@ -1671,7 +1671,7 @@ async function syncNow(keepalive = false) {
     if (res.status === 404 && code) res = await postProgress("", keepalive); // the code is gone: make a new one
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.code) throw new Error(body.error || `HTTP ${res.status}`);
-    if (code && body.code !== code) syncState.notice = "Старый код не найден — создан новый.";
+    if (code && body.code !== code) syncState.notice = code.length > body.code.length ? `Ваш код стал короче: ${body.code}.` : "Старый код не найден — создан новый.";
     setSyncCode(body.code);
     // The server's copy, plus anything done on this phone while it was saving.
     const changed = adoptProgress(mergeProgress(body.data, localProgress()));
@@ -1695,7 +1695,7 @@ async function syncNow(keepalive = false) {
 /** Uses progress saved under someone's code on this phone. Returns an error message, or null. */
 async function joinCode(input) {
   const code = normalizeCode(input);
-  if (!code) return "Код выглядит так: XXXX-XXXX-XXXX — 12 латинских букв и цифр.";
+  if (!code) return "Код — это 4 латинские буквы или цифры, например K7QM.";
   let res;
   try {
     res = await postProgress(code);
@@ -1716,7 +1716,7 @@ async function joinCode(input) {
 }
 
 async function startSync() {
-  // A link with a code (…/learn.html?code=K7QM-4TZP-9HXW) opens that progress on this phone.
+  // A link with a code (…/learn.html?code=K7QM) opens that progress on this phone.
   const linked = new URLSearchParams(location.search).get("code");
   if (linked) {
     history.replaceState(null, "", location.pathname + location.hash);
@@ -1755,8 +1755,8 @@ function syncCardContent() {
 
   if (syncState.joining) {
     const input = h("input", {
-      class: "code-input", id: "syncInput", type: "text", placeholder: "XXXX-XXXX-XXXX", "aria-label": "Код прогресса",
-      autocapitalize: "characters", autocomplete: "off", autocorrect: "off", spellcheck: "false", maxlength: "20", enterkeyhint: "go",
+      class: "code-input", id: "syncInput", type: "text", placeholder: "K7QM", "aria-label": "Код прогресса: 4 буквы или цифры",
+      autocapitalize: "characters", autocomplete: "off", autocorrect: "off", spellcheck: "false", maxlength: "16", enterkeyhint: "go",
     });
     return [head,
       h("p", { class: "sync-note" }, "Введите код с другого телефона: прогресс загрузится сюда, а то, что вы уже прошли здесь, добавится к нему."),
