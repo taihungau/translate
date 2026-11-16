@@ -4,7 +4,7 @@ import { dictionary } from "cmu-pronouncing-dictionary"; // the same version pro
 import { enToCyrillic } from "../public/pronounce.js";
 import { readFileSync } from "node:fs";
 import { TRACKS, LEVELS, LESSONS } from "../public/lessons.js";
-import { compareSpeech, checkWriting, oneLetterOff, testQuestions, choices, tokens, grade, isLearned, isDue, INTERVALS, dayKey, streak } from "../public/learn-core.js";
+import { compareSpeech, checkWriting, oneLetterOff, testQuestions, choices, tokens, grade, isLearned, isDue, INTERVALS, dayKey, streak, clozeItem, buildWorkout, LEVEL_LETTERS, placementStep } from "../public/learn-core.js";
 
 const marks = (r) => r.words.map((w) => (w.ok ? w.word : `[${w.word}]`)).join(" ");
 
@@ -156,4 +156,81 @@ test("daily streak: days in a row, still alive until today is over", () => {
   assert.equal(streak({ "2026-11-03": 10, "2026-11-02": 1 }, today), 2, "not practised yet today");
   assert.equal(streak({ "2026-11-04": 3, "2026-11-02": 1 }, today), 1, "a missed day breaks it");
   assert.equal(streak({ "2026-11-01": 4, "2026-10-31": 2 }, new Date(2026, 10, 1)), 2, "across months");
+});
+
+test("fill-the-gap leaves out a meaningful word and offers it among four", () => {
+  const pool = ["Could you fill in this form?", "Lie down on your back, please.", "Are you comfortable?", "Tell me if anything hurts."];
+  for (let n = 0; n < 30; n++) {
+    const item = clozeItem("Your skin feels tight after washing.", pool);
+    assert.equal(`${item.before}${item.answer}${item.after}`, "Your skin feels tight after washing.");
+    assert.ok(item.answer.length >= 3 && item.answer !== "Your", item.answer);
+    assert.equal(item.options.length, 4);
+    assert.equal(new Set(item.options).size, 4);
+    assert.ok(item.options.includes(item.answer));
+  }
+  const end = clozeItem("Relax your forehead.", [], () => 0); // the longest word; punctuation stays outside the gap
+  assert.deepEqual([end.before, end.answer, end.after], ["Relax your ", "forehead", "."]);
+  assert.equal(clozeItem("Hi, I'm ok.", pool), null, "no word worth a gap");
+  for (let n = 0; n < 20; n++) {
+    const item = clozeItem("We're done, that's great.", ["Let's go home.", "You're right, it's lovely."]);
+    assert.ok(["done", "great"].includes(item.answer), `no contractions in the gap: ${item.answer}`);
+    assert.ok(item.options.every((o) => !o.includes("'")), "nor among the choices");
+  }
+});
+
+test("the daily workout mixes reviews with new phrases, each new one checked a few items later", () => {
+  const due = Array.from({ length: 12 }, (_, i) => ({ en: `due ${i}` }));
+  const fresh = Array.from({ length: 8 }, (_, i) => ({ en: `new ${i}` }));
+  const items = buildWorkout({ due, fresh, size: 20, random: () => 0 });
+  assert.equal(items.length, 20);
+  const intros = items.filter((it) => it.format === "intro");
+  assert.equal(intros.length, 6, "a third of the session is new");
+  assert.equal(items.filter((it) => due.includes(it.phrase)).length, 8);
+  assert.notEqual(items[0].format, "intro", "starts with a review");
+  for (const intro of intros) {
+    const at = items.indexOf(intro);
+    const check = items.findIndex((it, i) => i > at && it.phrase === intro.phrase);
+    assert.ok(check > at, `${intro.phrase.en} is checked`);
+    assert.notEqual(items[check].format, "intro");
+  }
+  assert.equal(new Set(items.filter((it) => it.format !== "intro").map((it) => it.format)).size, 4, "every exercise kind comes up");
+
+  const onlyNew = buildWorkout({ fresh, size: 20 });
+  assert.equal(onlyNew.filter((it) => it.format === "intro").length, 8, "nothing due: more new phrases");
+  assert.equal(onlyNew.length, 16);
+  assert.equal(buildWorkout({ due: [due[0], due[0]], fresh: [due[0]], size: 10 }).length, 1, "a phrase comes once");
+  assert.deepEqual(buildWorkout({}), []);
+});
+
+test("the placement test goes up after a passed level and down after a failed one", () => {
+  assert.deepEqual(LEVELS.map((l) => l.badge).filter((x) => !LEVEL_LETTERS.includes(x)), []);
+  let s = placementStep({}, 2, true); // starts at C
+  assert.equal(s.next, 3);
+  s = placementStep(s.results, 3, true);
+  assert.equal(s.next, 4);
+  s = placementStep(s.results, 4, false);
+  assert.equal(s.level, "E", "knows C and D, not E: starts at E");
+
+  s = placementStep({}, 2, false);
+  assert.equal(s.next, 1);
+  s = placementStep(s.results, 1, false);
+  assert.equal(s.next, 0);
+  assert.equal(placementStep(s.results, 0, true).level, "B");
+  assert.equal(placementStep({}, 0, false).level, "A");
+  assert.equal(placementStep({ C: false }, 1, true).level, "C", "knows B, not C");
+
+  let r = {};
+  for (let i = 2; i < 7; i++) {
+    s = placementStep(r, i, true);
+    r = s.results;
+  }
+  assert.equal(s.level, "G");
+});
+
+test("cosmetology is a special section: every lesson has the four skills' phrases", () => {
+  const beauty = TRACKS.find((t) => t.id === "beauty");
+  assert.ok(beauty?.special);
+  const lessons = LESSONS.filter((l) => LEVELS.find((v) => v.id === l.level).track === "beauty");
+  assert.ok(lessons.length >= 10);
+  for (const lesson of lessons) assert.ok(lesson.phrases.length >= 8, `${lesson.id}: enough phrases for an 8-question exercise`);
 });

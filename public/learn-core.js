@@ -201,3 +201,99 @@ export function choices(right, pool, count = 4, random = Math.random) {
   const others = testQuestions([...new Set(pool)].filter((x) => x !== right), count - 1, random);
   return testQuestions([right, ...others], count, random);
 }
+
+// ---------------------------------------------------------------- learning faster
+// Words not worth blanking out in a fill-the-gap exercise: they don't test the phrase.
+const CLOZE_SKIP = new Set(["the", "and", "you", "are", "for", "was", "his", "her", "its", "our", "but", "not", "can",
+  "has", "have", "had", "she", "they", "them", "this", "that", "with", "your", "what", "who", "i'm", "it's", "i'd",
+  "i'll", "don't", "there", "here", "very", "just", "too", "out", "all"]);
+const clozeBare = (w) => w.replace(/^[^A-Za-z']+|[^A-Za-z']+$/g, "");
+
+/**
+ * Fill-the-gap: one meaningful word of `text` left out, and four words to choose from (the
+ * right one and three from `pool`, other phrases of the lesson). Null when no word fits.
+ * @returns {{before: string, answer: string, after: string, options: string[]} | null}
+ */
+export function clozeItem(text, pool = [], random = Math.random) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const candidates = words.map((raw, i) => ({ i, w: clozeBare(raw) }))
+    .filter(({ w }) => /^[A-Za-z][A-Za-z-]*$/.test(w) && w.length >= 3 && !CLOZE_SKIP.has(w.toLowerCase())); // no contractions
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b.w.length - a.w.length);
+  const top = candidates.slice(0, Math.max(1, Math.ceil(candidates.length / 2))); // the longer words
+  const { i, w: answer } = top[Math.floor(random() * top.length)];
+  const raw = words[i];
+  const start = raw.indexOf(answer);
+  const before = (i ? `${words.slice(0, i).join(" ")} ` : "") + raw.slice(0, start);
+  const after = raw.slice(start + answer.length) + (i < words.length - 1 ? " " : "") + words.slice(i + 1).join(" ");
+  const capital = /^[A-Z]/.test(answer);
+  const seen = new Set([answer.toLowerCase()]);
+  const others = [];
+  for (const phrase of pool) {
+    for (const part of String(phrase).split(/\s+/)) {
+      const w = clozeBare(part);
+      if (!/^[A-Za-z][A-Za-z-]*$/.test(w) || w.length < 3 || seen.has(w.toLowerCase()) || CLOZE_SKIP.has(w.toLowerCase())) continue;
+      if (!capital && /^[A-Z]/.test(w) && w !== "I") continue; // a name in a lowercase gap would give itself away
+      seen.add(w.toLowerCase());
+      others.push(capital ? w[0].toUpperCase() + w.slice(1) : w.toLowerCase());
+    }
+  }
+  const near = others.filter((w) => Math.abs(w.length - answer.length) <= 3);
+  const distractors = testQuestions(near.length >= 3 ? near : others, 3, random);
+  return { before, answer, after, options: testQuestions([answer, ...distractors], 4, random) };
+}
+
+/**
+ * The daily workout: phrases due for review and new ones, interleaved. A new phrase is introduced
+ * ("intro") and checked a few items later; reviews and checks rotate through `formats`, so each
+ * phrase is recalled a different way (dictation, translation, speaking, fill-the-gap).
+ * @returns {{phrase: object, format: string}[]}
+ */
+export function buildWorkout({ due = [], fresh = [], size = 20, formats = ["dictation", "write", "cloze", "speak"], random = Math.random } = {}) {
+  const seen = new Set();
+  const once = (list) => list.filter((p) => p && !seen.has(p.en) && seen.add(p.en));
+  const reviews = once(due);
+  const learn = once(fresh);
+  // New phrases take two places each; up to a third of the session, more when little is due.
+  const newCount = Math.min(learn.length, Math.max(Math.floor(size / 3), Math.floor((size - reviews.length) / 2)));
+  const reviewCount = Math.min(reviews.length, size - newCount * 2);
+  let f = Math.floor(random() * formats.length);
+  const format = () => formats[f++ % formats.length];
+  const items = [];
+  const checks = []; // new phrases waiting to be checked: { phrase, at }
+  let r = 0;
+  let n = 0;
+  while (r < reviewCount || n < newCount || checks.length) {
+    const ready = checks.findIndex((c) => c.at <= items.length);
+    if (ready >= 0) {
+      items.push({ phrase: checks.splice(ready, 1)[0].phrase, format: format() });
+    } else if (n < newCount && (items.length % 2 === 1 || r >= reviewCount)) {
+      items.push({ phrase: learn[n], format: "intro" });
+      checks.push({ phrase: learn[n++], at: items.length + 2 });
+    } else if (r < reviewCount) {
+      items.push({ phrase: reviews[r++], format: format() });
+    } else {
+      items.push({ phrase: checks.shift().phrase, format: format() });
+    }
+  }
+  return items;
+}
+
+/** The seven levels, A (first words) to G (like a native speaker). */
+export const LEVEL_LETTERS = "ABCDEFG";
+
+/**
+ * One step of the placement test, after a block of questions at level `i`: go up after a passed
+ * level, down after a failed one, and stop where a passed level meets a failed one above it.
+ * @returns {{results: object, next?: number, level?: string}} `level` is where she should start.
+ */
+export function placementStep(results, i, passed) {
+  const r = { ...results, [LEVEL_LETTERS[i]]: passed };
+  if (passed) {
+    if (r[LEVEL_LETTERS[i + 1]] === false) return { results: r, level: LEVEL_LETTERS[i + 1] };
+    if (i === LEVEL_LETTERS.length - 1) return { results: r, level: LEVEL_LETTERS[i] };
+    return { results: r, next: i + 1 };
+  }
+  if (i === 0 || r[LEVEL_LETTERS[i - 1]] === true) return { results: r, level: LEVEL_LETTERS[i] };
+  return { results: r, next: i - 1 };
+}

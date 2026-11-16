@@ -4,7 +4,7 @@
 // same speech recognition as live subtitles, and sentences she writes herself are checked by Claude.
 import { TRACKS, LEVELS, LESSONS } from "./lessons.js";
 import { mergeProgress, normalizeCode, SYNC_KEYS } from "./learn-sync.js";
-import { compareSpeech, checkWriting, testQuestions, choices, grade, isLearned, isDue, verdict, dayKey, streak } from "./learn-core.js";
+import { compareSpeech, checkWriting, testQuestions, choices, grade, isLearned, isDue, verdict, dayKey, streak, clozeItem, buildWorkout, LEVEL_LETTERS, placementStep } from "./learn-core.js";
 
 const APP_URL = "https://translate-hyperlinks-projects.vercel.app/";
 const view = document.getElementById("view");
@@ -125,6 +125,7 @@ setInterval(() => { if (backdropChoice === "auto") applyBackdrop(); }, 10 * 60 *
 const progress = load("learnProgress", {}); // English phrase → { box, due }
 const tests = load("learnTests", {}); // lesson id → { best, last, total, at }: written test results
 const skills = load("learnSkills", {}); // lesson id → { listen, read, speak: { best, last, total, at } }
+const placement = load("learnPlacement", {}); // { level: "C", at, tested }: her level, from the placement test or chosen
 let mode = load("learnMode", "understand"); // "understand": English → Russian; "speak": Russian → English
 
 // ---------------------------------------------------------------- building the page
@@ -360,7 +361,7 @@ async function detectApp() {
   // Show what just became available, without restarting a practice session or losing an answer
   // being typed.
   if (testRun && testRun.index < testRun.questions.length) return showFoot();
-  if (drill) { if (!attempt) renderDrill(drill.kind, drill.lesson); return showFoot(); } // speaking can now be checked
+  if (drill) { if (!attempt) renderSession(); return showFoot(); } // speaking can now be checked
   if (!session) route();
   else {
     for (const el of document.querySelectorAll("[data-needs-app]")) el.hidden = false;
@@ -416,7 +417,8 @@ async function listenOnce(onInterim) {
 }
 
 // ---------------------------------------------------------------- daily goal and streak
-const stats = load("learnStats", { goal: 10, days: {} }); // days: dayKey → cards practised
+const stats = load("learnStats", { goal: 20, days: {} }); // days: dayKey → answers and cards practised
+const GOALS = [10, 20, 30, 50];
 const todayCount = () => stats.days[dayKey()] ?? 0;
 
 /** Counts a practised card; true when it completes today's goal. */
@@ -464,15 +466,15 @@ function todayCard() {
       goalRing(done, stats.goal),
       h("div", { class: "today-text" },
         h("b", {}, done >= stats.goal ? "Цель на сегодня выполнена" : "Цель на сегодня"),
-        h("span", { class: "num" }, `${done} из ${stats.goal} ${plural(stats.goal, "карточки", "карточек", "карточек")}`),
+        h("span", { class: "num" }, `${done} из ${stats.goal} ${plural(stats.goal, "задания", "заданий", "заданий")}`),
         h("span", { class: `streak${done ? " lit" : ""}` }, lessonIcon("flame", "streak-icon"),
           days ? streakText(days) : "Начните серию сегодня"),
       ),
     ),
     h("div", { class: "today-options" },
-      h("div", { class: "option" }, h("span", { class: "option-label", id: "goalLabel" }, "Карточек в день"),
+      h("div", { class: "option" }, h("span", { class: "option-label", id: "goalLabel" }, "Заданий в день"),
         h("div", { class: "chips", role: "radiogroup", "aria-labelledby": "goalLabel" },
-          [5, 10, 20].map((n) => chip(n, stats.goal === n, () => { stats.goal = n; save("learnStats", stats); renderCourse(currentTrack); })))),
+          GOALS.map((n) => chip(n, stats.goal === n, () => { stats.goal = n; save("learnStats", stats); renderCourse(currentTrack); })))),
       serverTts
         ? h("div", { class: "option" }, h("span", { class: "option-label", id: "voiceLabel" }, "Голос"),
             h("div", { class: "chips", role: "radiogroup", "aria-labelledby": "voiceLabel" },
@@ -577,10 +579,10 @@ const TASKS = [
   { key: "cards", title: "Карточки", icon: "layers", what: "Выучить фразы урока" },
   { key: "speak", title: "Говорение", icon: "mic", what: "Сказать фразы по-английски вслух", group: "Устная речь",
     about: "Видите фразу по-русски и говорите её по-английски вслух. В приложении распознавание речи отмечает каждое слово; в других местах вы проверяете себя сами." },
-  { key: "listen", title: "Аудирование", icon: "headphones", what: "Послушать и выбрать, что прозвучало", group: "Устная речь",
-    about: "Слушаете фразу без текста и выбираете, что прозвучало. Если быстро — нажмите «Медленно»." },
-  { key: "read", title: "Чтение", icon: "book-open-text", what: "Прочитать и выбрать перевод", group: "Письменная речь",
-    about: "Читаете фразу по-английски и выбираете правильный перевод." },
+  { key: "listen", title: "Аудирование", icon: "headphones", what: "Послушать и понять", group: "Устная речь",
+    about: "Слушаете фразу без текста и выбираете, что прозвучало; с уровня C — диктант: пишете, что услышали. Если быстро — нажмите «Медленно»." },
+  { key: "read", title: "Чтение", icon: "book-open-text", what: "Прочитать и понять", group: "Письменная речь",
+    about: "Читаете фразу по-английски и выбираете перевод; с уровня C — вставляете пропущенное слово." },
   { key: "write", title: "Письмо", icon: "pencil-line", what: "Написать фразы по-английски", group: "Письменная речь",
     about: "Пишете фразы урока по-английски, а приложение проверяет каждое слово, как учитель." },
 ];
@@ -608,7 +610,33 @@ const unitDone = (lesson) => TASKS.every((t) => taskDone(lesson, t.key));
 const unitProgress = (lesson) => TASKS.reduce((sum, t) => sum + taskShare(lesson, t.key), 0) / TASKS.length;
 const nextTask = (lesson) => TASKS.find((t) => !taskDone(lesson, t.key));
 const doneCount = (lesson) => TASKS.filter((t) => taskDone(lesson, t.key)).length;
-const nextLesson = (track) => trackLessons(track).find((lesson) => !unitDone(lesson));
+
+// Her level, A–G: set by the placement test or the "Мой уровень" switch. Each section shows that
+// level's lessons; "Продолжить" and the daily workout start there. A special section (cosmetology)
+// is a topic, not a ladder: all its lessons show, whatever her level.
+const letterOf = (lesson) => levelOf(lesson).badge;
+const myLevel = () => (placement.level && LEVEL_LETTERS.includes(placement.level) ? placement.level : "A");
+const isSpecial = (track) => Boolean(TRACKS.find((t) => t.id === track)?.special);
+const belowLevel = (lesson) => !isSpecial(trackOf(lesson)) && LEVEL_LETTERS.indexOf(letterOf(lesson)) < LEVEL_LETTERS.indexOf(myLevel());
+const trackLetters = (track) => LEVELS.filter((l) => l.track === track).map((l) => l.badge);
+/** The level a section shows: hers, or the nearest one the section has (Работа starts at C). */
+function shownLevel(track) {
+  const letters = trackLetters(track);
+  const mine = myLevel();
+  return letters.includes(mine) ? mine : letters.find((x) => x > mine) ?? letters.at(-1);
+}
+function setMyLevel(letter, tested = false) {
+  const kept = placement.tested && placement.level === letter; // the test's result, chosen again
+  placement.level = letter;
+  placement.at = Date.now();
+  placement.tested = tested || Boolean(kept);
+  save("learnPlacement", placement);
+}
+/** The lesson to go on with: the first unfinished one from her level up, else any unfinished one. */
+function nextLesson(track) {
+  const lessons = trackLessons(track);
+  return lessons.find((lesson) => !belowLevel(lesson) && !unitDone(lesson)) ?? lessons.find((lesson) => !unitDone(lesson));
+}
 let currentTrack = TRACKS.some((t) => t.id === load("learnTrack", "")) ? load("learnTrack", "") : TRACKS[0].id;
 
 // A checklist mark: an empty circle, a ring filling up in blue, then a green circle with a tick.
@@ -727,7 +755,7 @@ function renderSkill(kind) {
   const track = currentTrack;
   const lessons = trackLessons(track);
   const done = lessons.filter((l) => taskDone(l, kind)).length;
-  const next = lessons.find((l) => !taskDone(l, kind));
+  const next = lessons.find((l) => !belowLevel(l) && !taskDone(l, kind)) ?? lessons.find((l) => !taskDone(l, kind));
   document.title = `${info.title} · Курс английского`;
   const row = (lesson) => {
     const ok = taskDone(lesson, kind);
@@ -754,6 +782,7 @@ function renderSkill(kind) {
         class: "track", type: "button", "aria-current": t.id === track ? "page" : null,
         onclick: () => { currentTrack = t.id; save("learnTrack", t.id); renderSkill(kind); },
       }, lessonIcon(t.icon, "track-icon"), h("span", {}, t.title)))),
+    isSpecial(track) ? null : levelCard(track, () => renderSkill(kind)),
     h("section", { class: "card summary", "aria-label": "Прогресс" },
       h("div", { class: "summary-stat" },
         h("b", { class: "num" }, done),
@@ -763,7 +792,7 @@ function renderSkill(kind) {
         next
           ? h("a", { class: "btn primary", href: taskHref(next, kind) }, icon(info.icon, "u"), `${done ? "Продолжить" : "Начать"}: урок ${UNIT_NO.get(next.id)}`, icon("next"))
           : h("span", { class: "btn" }, "Все уроки раздела сданы"))),
-    LEVELS.filter((level) => level.track === track).map((level) => {
+    levelsShown(track).map((level) => {
       const inLevel = LESSONS.filter((lesson) => lesson.level === level.id);
       const count = inLevel.filter((l) => taskDone(l, kind)).length;
       const all = count === inLevel.length;
@@ -809,6 +838,79 @@ function deckFor(id) {
   return lesson && { id, title: lesson.title, back: `#unit-${id}`, phrases: lesson.phrases, lesson };
 }
 
+// "Мой уровень": the levels a section has, A–G, as a switch. Picking one sets her level everywhere.
+function levelCard(track, onPick) {
+  const shown = shownLevel(track);
+  const level = LEVELS.find((l) => l.track === track && l.badge === shown);
+  const cefr = /\((≈ [^)]+)\)$/.exec(level.about)?.[1] ?? "";
+  const mine = myLevel();
+  return h("section", { class: "card level-card", "aria-label": "Мой уровень" },
+    h("div", { class: "card-head" },
+      h("h2", { id: "levelLabel" }, "Мой уровень"),
+      h("a", { class: "link-btn", href: "#placement" }, icon("target", "u"), placement.tested ? "Пройти тест заново" : "Тест уровня")),
+    h("div", { class: "chips levels", role: "radiogroup", "aria-labelledby": "levelLabel" },
+      trackLetters(track).map((x) => {
+        const inLevel = LESSONS.filter((l) => l.level === `${track}-${x}`);
+        const done = inLevel.every(unitDone);
+        return h("button", {
+          class: `chip level-chip${done ? " done" : ""}`, type: "button", role: "radio", "aria-checked": String(x === shown),
+          "aria-label": `Уровень ${x}${done ? ", пройден" : ""}`,
+          onclick: () => { if (x !== shown || x !== mine) { setMyLevel(x); onPick(); } },
+        }, x, done ? icon("check") : null);
+      })),
+    h("p", { class: "level-note" }, h("b", {}, `${shown} · ${level.title}`), cefr ? ` ${cefr}` : "",
+      shown !== mine ? ` · в этом разделе ближе всего к вашему уровню ${mine}` : placement.tested ? " · по тесту уровня" : ""),
+  );
+}
+
+// Before her level is known: a five-minute test, or start at the beginning.
+function placementCard() {
+  return h("section", { class: "card placement-card", "aria-label": "Тест уровня" },
+    lessonIcon("target", "tile"),
+    h("div", { class: "placement-text" },
+      h("b", {}, "С какого уровня начать?"),
+      h("span", {}, "Тест на 5 минут: подберём уровень, чтобы не тратить время на то, что вы уже знаете.")),
+    h("div", { class: "btn-row" },
+      h("a", { class: "btn primary", href: "#placement" }, "Пройти тест"),
+      h("button", { class: "btn", type: "button", onclick: () => { setMyLevel("A"); renderCourse(currentTrack); } }, "Начать с A")));
+}
+
+// The daily workout: everything due, new phrases from her level, each in a different exercise.
+function workoutCard() {
+  const { due, fresh } = workoutSources();
+  const reviews = Math.min(due.length, WORKOUT_SIZE);
+  const fresher = Math.min(fresh.length, Math.max(Math.floor(WORKOUT_SIZE / 3), Math.floor((WORKOUT_SIZE - due.length) / 2)));
+  const parts = [
+    reviews ? `${reviews} на повторение` : null,
+    fresher ? `${fresher} ${plural(fresher, "новая фраза", "новые фразы", "новых фраз")}` : null,
+  ].filter(Boolean).join(" и ");
+  return h("section", { class: "card workout-card", "aria-label": "Тренировка дня" },
+    h("div", { class: "workout-head" },
+      lessonIcon("zap", "tile workout-icon"),
+      h("div", { class: "placement-text" },
+        h("b", {}, "Тренировка дня"),
+        h("span", {}, `≈ 10 минут: ${parts || "всё на повторение"}. Диктант, перевод, пропущенные слова и говорение вперемешку; ошибки возвращаются, пока не получится.`))),
+    h("a", { class: "btn primary wide", href: "#workout" }, icon("zap", "u"), "Начать тренировку", icon("next")));
+}
+
+// A level of a section, with its lessons.
+function levelSection(level, next) {
+  const lessons = LESSONS.filter((lesson) => lesson.level === level.id);
+  const count = lessons.filter(unitDone).length;
+  const levelDone = count === lessons.length;
+  const share = lessons.reduce((sum, lesson) => sum + unitProgress(lesson), 0) / lessons.length;
+  return h("section", { class: `level${levelDone ? " done" : ""}`, "aria-label": level.title },
+    h("div", { class: "level-head" },
+      h("span", { class: "badge" }, level.badge ?? level.id), h("h3", {}, level.title),
+      h("span", { class: "level-count num", "aria-label": `Пройдено уроков: ${count} из ${lessons.length}` }, levelDone ? icon("check") : null, `${count} из ${lessons.length}`)),
+    h("p", { class: "level-about" }, level.about),
+    h("div", { class: `meter thin${levelDone ? " done" : ""}` }, h("i", { style: `width: ${share * 100}%` })),
+    h("ol", { class: "units" }, lessons.map((lesson) => unitRow(lesson, next))),
+  );
+}
+/** The levels a page shows: the one picked with "Мой уровень", or all of a special section. */
+const levelsShown = (track) => LEVELS.filter((level) => level.track === track && (isSpecial(track) || level.badge === shownLevel(track)));
+
 // ---------------------------------------------------------------- views
 function renderCourse(track = currentTrack) {
   currentTrack = track;
@@ -833,13 +935,16 @@ function renderCourse(track = currentTrack) {
     ),
     h("header", {},
       h("h1", {}, "Курс английского"),
-      h("p", { class: "lede" }, `${LESSONS.length} ${plural(LESSONS.length, "урок", "урока", "уроков")} в трёх разделах и семи уровнях: от A (первые слова) до G (как носитель). В каждом уроке — карточки и четыре навыка: говорение, аудирование, чтение и письмо.`),
+      h("p", { class: "lede" }, `${LESSONS.length} ${plural(LESSONS.length, "урок", "урока", "уроков")} в семи уровнях: от A (первые слова) до G (как носитель). В каждом уроке — карточки и четыре навыка: говорение, аудирование, чтение и письмо.`),
     ),
+    placement.level ? null : placementCard(),
+    workoutCard(),
     todayCard(),
     syncEnabled ? syncCard() : null,
     h("nav", { class: "tracks", "aria-label": "Разделы курса" },
       TRACKS.map((t) => h("a", { class: "track", href: `#${t.id}`, "aria-current": t.id === track ? "page" : null },
         lessonIcon(t.icon, "track-icon"), h("span", {}, t.title)))),
+    isSpecial(track) ? null : levelCard(track, () => renderCourse(track)),
     skillsCard(track),
     h("section", { class: "card summary", "aria-label": "Прогресс" },
       h("p", { class: "summary-about" }, info.about),
@@ -857,20 +962,7 @@ function renderCourse(track = currentTrack) {
         track === "grammar" ? h("a", { class: "btn", href: "#grammar-plan" }, icon("calendar", "u"), "Программа и план") : null,
       ),
     ),
-    ...LEVELS.filter((level) => level.track === track).map((level) => {
-      const lessons = LESSONS.filter((lesson) => lesson.level === level.id);
-      const doneCount = lessons.filter(unitDone).length;
-      const levelDone = doneCount === lessons.length;
-      const share = lessons.reduce((sum, lesson) => sum + unitProgress(lesson), 0) / lessons.length;
-      return h("section", { class: `level${levelDone ? " done" : ""}`, "aria-label": level.title },
-        h("div", { class: "level-head" },
-          h("span", { class: "badge" }, level.badge ?? level.id), h("h3", {}, level.title),
-          h("span", { class: "level-count num", "aria-label": `Пройдено уроков: ${doneCount} из ${lessons.length}` }, levelDone ? icon("check") : null, `${doneCount} из ${lessons.length}`)),
-        h("p", { class: "level-about" }, level.about),
-        h("div", { class: `meter thin${levelDone ? " done" : ""}` }, h("i", { style: `width: ${share * 100}%` })),
-        h("ol", { class: "units" }, lessons.map((lesson) => unitRow(lesson, next))),
-      );
-    }),
+    levelsShown(track).map((level) => levelSection(level, next)),
     track === "daily" && films
       ? h("section", { class: "level", "aria-label": "Из фильмов" },
           h("div", { class: "level-head" }, h("h3", {}, "Из ваших фильмов")),
@@ -1242,7 +1334,7 @@ function markedAnswer(words, cls) {
     words.flatMap((w, i) => [i ? " " : "", h("span", { class: w.ok ? null : w.near ? "near" : "x" }, w.word)]));
 }
 
-function checkBlock(q, a) {
+function checkBlock(q, a, onAccept = acceptAnswer) {
   const { result } = a;
   const right = isRight(a);
   const state = right ? "good" : result.score >= 0.6 ? "almost" : "bad";
@@ -1261,8 +1353,8 @@ function checkBlock(q, a) {
     result.fixes.length && !result.correct
       ? h("p", { class: "fixes" }, "Проверьте написание: ", result.fixes.flatMap((f, i) => [i ? ", " : "", h("span", { lang: "en" }, h("s", {}, f.typed), " → ", h("b", {}, f.right))]))
       : null,
-    !right && a.typed.trim()
-      ? h("button", { class: "btn small", type: "button", onclick: () => acceptAnswer() }, "Мой ответ тоже верный")
+    !right && a.typed.trim() && onAccept
+      ? h("button", { class: "btn small", type: "button", onclick: () => onAccept() }, "Мой ответ тоже верный")
       : null,
   );
 }
@@ -1515,143 +1607,191 @@ async function sendOwnSentence() {
   if (testRun === t) refreshOwn();
 }
 
-// ---------------------------------------------------------------- skills (#listen-cafe, #read-cafe, #speak-cafe)
-// Three short exercises per lesson, eight phrases each, passed with 6 of 8:
-// - listening: hear a phrase (no text) and pick what was said;
-// - reading: read a phrase and pick its meaning;
-// - speaking: say the Russian phrase in English. In the app speech recognition checks it; elsewhere
-//   she says it aloud, looks at the answer and marks herself.
-const DRILLS = {
-  listen: { title: "Аудирование", icon: "headphones", ask: "Послушайте и выберите, что прозвучало." },
-  read: { title: "Чтение", icon: "book-open-text", ask: "Прочитайте и выберите перевод." },
-  speak: { title: "Говорение", icon: "mic", ask: "Скажите это по-английски вслух." },
+// ---------------------------------------------------------------- exercises (#listen-cafe, #workout, #placement)
+// One engine runs every exercise: a lesson's skills (8 phrases, passed with 6), the daily workout
+// and the placement test. An item is a phrase and a format; the formats get harder with the level:
+// from C, listening is dictation (type what you hear) and reading is fill-the-gap.
+const FORMATS = {
+  "pick-heard": { name: "Аудирование", ask: "Послушайте и выберите, что прозвучало.", tip: "Не получается разобрать? Нажмите «Медленно»." },
+  "pick-meaning": { name: "Чтение", ask: "Прочитайте и выберите перевод.", tip: "Не торопитесь: сначала прочитайте всю фразу." },
+  cloze: { name: "Пропущенное слово", ask: "Вставьте пропущенное слово.", tip: "Подсказка — перевод под фразой." },
+  dictation: { name: "Диктант", ask: "Послушайте и напишите, что услышали.", tip: "Слушайте сколько нужно. Заглавные буквы и знаки препинания не важны." },
+  write: { name: "Перевод", ask: "Напишите это по-английски.", tip: "Заглавные буквы и знаки препинания не важны; I'm и I am — одно и то же." },
+  speak: { name: "Говорение", ask: "Скажите это по-английски вслух.", tip: "Говорите громко и чётко, как в разговоре." },
+  intro: { name: "Новая фраза", ask: "Новая фраза: послушайте и повторите вслух.", tip: "Через пару заданий она вернётся — проверим, запомнилась ли." },
+  "pick-correct": { name: "Грамматика", ask: "Какой вариант правильный?", tip: "Не уверены — нажмите «Не знаю»: так тест точнее." },
 };
-let drill = null; // { kind, lesson, items, options, index, answers: [{ ok, choice }], revealed, feedback }
+const DRILLS = {
+  listen: { title: "Аудирование", icon: "headphones" },
+  read: { title: "Чтение", icon: "book-open-text" },
+  speak: { title: "Говорение", icon: "mic" },
+};
+const WORKOUT_SIZE = 20;
+const WORKOUT_FORMATS = ["dictation", "write", "cloze", "speak"];
+let drill = null; // the exercise in progress: { type: "drill" | "workout" | "placement", items, index, answers, ui, … }
+
+const levelIndex = (lesson) => LEVEL_LETTERS.indexOf(letterOf(lesson));
+/** A lesson exercise's format: harder from level C. */
+function drillFormat(kind, lesson) {
+  const hard = levelIndex(lesson) >= 2;
+  if (kind === "listen") return hard ? "dictation" : "pick-heard";
+  if (kind === "read") return hard ? "cloze" : "pick-meaning";
+  return "speak";
+}
+
+/** An item: the phrase, its format and what to choose from. */
+function makeItem(phrase, format, pool) {
+  const others = pool ?? PHRASE_LESSON.get(phrase.en)?.phrases ?? testQuestions(ALL_PHRASES, 40);
+  if (format === "pick-heard") return { phrase, format, options: choices(phrase.en, others.map((p) => p.en)) };
+  if (format === "pick-meaning") return { phrase, format, options: choices(phrase.ru, others.map((p) => p.ru)) };
+  if (format === "cloze") {
+    const cloze = clozeItem(phrase.en, others.filter((p) => p.en !== phrase.en).map((p) => p.en));
+    return cloze ? { phrase, format, cloze, options: cloze.options } : { phrase, format: "write" };
+  }
+  return { phrase, format };
+}
 
 function startDrill(kind, lesson) {
-  const items = testQuestions(lesson.phrases, TEST_SIZE);
-  const options = items.map((q) => (kind === "listen" ? choices(q.en, lesson.phrases.map((p) => p.en)) : kind === "read" ? choices(q.ru, lesson.phrases.map((p) => p.ru)) : null));
-  drill = { kind, lesson, items, options, index: 0, answers: [], revealed: false, feedback: null };
+  const items = testQuestions(lesson.phrases, TEST_SIZE).map((p) => makeItem(p, drillFormat(kind, lesson), lesson.phrases));
+  drill = { type: "drill", kind, lesson, items, index: 0, answers: [], ui: {} };
 }
-
 function renderDrill(kind, lesson) {
-  if (drill?.kind !== kind || drill.lesson !== lesson) startDrill(kind, lesson);
-  const d = drill;
-  if (d.index >= d.items.length) return renderDrillResults();
-  const info = DRILLS[kind];
-  const q = d.items[d.index];
-  const a = d.answers[d.index];
-  const isNew = d.shownIndex !== d.index;
-  d.shownIndex = d.index;
-  const celebrate = d.celebrate;
-  d.celebrate = null;
-  document.title = `${info.title} · ${lesson.title} · Курс английского`;
-  prefetch(q.en);
-  prefetch(d.items[d.index + 1]?.en);
-
-  const answerLine = () => h("div", { class: "drill-answer" }, playButton(q.en), h("span", { class: "line-text" },
-    h("span", { class: "en", lang: "en" }, q.en), q.say ? h("span", { class: "say", lang: "ru" }, q.say) : null, h("span", { class: "ru" }, q.ru)));
-  const options = (list, lang) => h("div", { class: "choices", role: "group", "aria-label": "Варианты ответа" },
-    list.map((opt) => {
-      const right = opt === (kind === "listen" ? q.en : q.ru);
-      const state = a ? (right ? " right" : opt === a.choice ? " wrong" : "") : "";
-      return h("button", { class: `choice${state}`, type: "button", lang, disabled: a ? true : null, onclick: () => answerDrill(opt === (kind === "listen" ? q.en : q.ru), opt) },
-        a && right ? icon("check") : null, opt);
-    }));
-
-  let body;
-  if (kind === "listen") {
-    body = [
-      h("p", { class: "hint" }, info.ask),
-      canPlay()
-        ? h("div", { class: "listen-row" },
-            h("button", { class: "big-play", type: "button", "aria-label": "Послушать", onclick: (e) => speak(q.en, speed, e.currentTarget) }, icon("play")),
-            h("button", { class: "btn small", type: "button", onclick: (e) => speak(q.en, 0.5, e.currentTarget) }, "Медленно"))
-        : h("p", { class: "hint" }, "Озвучка недоступна в этом браузере."),
-      options(d.options[d.index], "en"),
-      a ? answerLine() : null,
-    ];
-  } else if (kind === "read") {
-    body = [
-      h("p", { class: "hint" }, info.ask),
-      h("div", { class: "en-big", lang: "en" }, q.en),
-      options(d.options[d.index], "ru"),
-      a ? answerLine() : null,
-    ];
-  } else {
-    const auto = Boolean(Recognizer);
-    body = [
-      h("p", { class: "hint" }, info.ask),
-      h("div", { class: "ru-big" }, q.ru),
-      d.feedback ? feedbackBlock(d.feedback) : null,
-      d.revealed || a ? answerLine() : null,
-      a && !auto ? h("div", { class: `self-mark ${a.ok ? "good" : "bad"}` }, a.ok ? [icon("check"), "Получилось"] : "Не получилось — в следующий раз получится") : null,
-      h("div", { class: "tools" },
-        auto ? h("button", { class: `btn${a ? "" : " primary"}`, type: "button", id: "drillSay", onclick: () => drillSpeak() }, icon("mic"), a ? "Сказать ещё раз" : "Сказать") : null,
-        !auto && !d.revealed && !a ? h("button", { class: "btn primary", type: "button", onclick: () => { d.revealed = true; renderDrill(kind, lesson); } }, "Проверить себя") : null,
-        auto && !d.revealed && !a ? h("button", { class: "btn", type: "button", onclick: () => { d.revealed = true; renderDrill(kind, lesson); } }, "Подсказка") : null,
-      ),
-      !auto && d.revealed && !a
-        ? h("div", { class: "grade" },
-            h("button", { class: "btn", type: "button", onclick: () => answerDrill(false) }, icon("repeat"), "Не вышло"),
-            h("button", { class: "btn primary", type: "button", onclick: () => answerDrill(true) }, icon("check"), "Получилось"))
-        : null,
-      auto ? null : h("p", { class: "hint" }, "Скажите вслух, потом откройте ответ и честно отметьте себя."),
-    ];
-  }
-
-  setView(
-    h("div", { class: "nav" }, lessonBack(lesson), h("span", { class: "count num" }, `${d.index + 1} из ${d.items.length}`)),
-    h("div", { class: "meter" }, h("i", { style: `width: ${(d.answers.length / d.items.length) * 100}%` })),
-    celebrate
-      ? h("div", { class: "celebrate", role: "status" }, lessonIcon("trophy", "celebrate-icon"),
-          h("span", {}, h("b", {}, "Цель на сегодня выполнена!"), ` ${streakText(streak(stats.days))}.`))
-      : null,
-    h("section", { class: `card flash drill${isNew ? " enter" : ""}`, "aria-label": `${info.title}: ${lesson.title}` },
-      h("div", { class: "flash-head" }, lessonIcon(info.icon, "tile small"), h("span", {}, `${info.title} · ${lesson.title}`)),
-      body,
-    ),
-    a ? h("button", { class: "btn primary wide", type: "button", id: "nextBtn", onclick: () => nextDrillItem() }, d.index + 1 < d.items.length ? "Дальше" : "Результаты", icon("next")) : null,
-    h("p", { class: "tip" }, kind === "listen" ? "Не получается разобрать? Нажмите «Медленно»." : kind === "read" ? "Не торопитесь: сначала прочитайте всю фразу." : "Говорите громко и чётко, как в разговоре."),
-  );
-  if (a) document.getElementById("nextBtn")?.focus({ preventScroll: true });
+  if (drill?.type !== "drill" || drill.kind !== kind || drill.lesson !== lesson) startDrill(kind, lesson);
+  renderSession();
 }
 
-function answerDrill(ok, choice = null) {
+// The daily workout: what is due, then new phrases from her level on, in the current section.
+function workoutSources() {
+  const now = Date.now();
+  const due = [...ALL_PHRASES, ...filmPhrases()].filter((p) => isDue(progress[p.en], now)).sort((a, b) => progress[a.en].due - progress[b.en].due);
+  const fresh = [];
+  for (const lesson of trackLessons(currentTrack)) {
+    if (belowLevel(lesson)) continue;
+    for (const p of lesson.phrases) if (!progress[p.en]) fresh.push(p);
+    if (fresh.length >= 12) break;
+  }
+  return { due, fresh };
+}
+function startWorkout() {
+  const items = buildWorkout({ ...workoutSources(), size: WORKOUT_SIZE, formats: WORKOUT_FORMATS }).map((it) => makeItem(it.phrase, it.format));
+  drill = { type: "workout", items, index: 0, answers: [], ui: {} };
+}
+
+// The placement test: three questions a level, starting at C, going up or down.
+function placementBlock(i) {
+  const letter = LEVEL_LETTERS[i];
+  const phrases = LESSONS.filter((l) => l.level === `daily-${letter}`).flatMap((l) => l.phrases);
+  const mistakes = LESSONS.filter((l) => l.level === `grammar-${letter}`).flatMap((l) => l.mistakes ?? []);
+  const [p1, p2, p3] = testQuestions(phrases, 3);
+  const items = [makeItem(p1, "pick-meaning", phrases)];
+  if (mistakes.length) {
+    const m = mistakes[Math.floor(Math.random() * mistakes.length)];
+    items.push({ phrase: { en: m.right, ru: "", say: "", why: m.why }, format: "pick-correct", options: testQuestions([m.right, m.wrong], 2) });
+  } else items.push(makeItem(p2, "pick-meaning", phrases));
+  items.push(makeItem(p3, canPlay() ? "pick-heard" : "pick-meaning", phrases));
+  return items.map((it) => ({ ...it, level: letter }));
+}
+function startPlacement() {
+  drill = { type: "placement", levelIdx: 2, results: {}, blockStart: 0, items: placementBlock(2), index: 0, answers: [], ui: {} };
+}
+
+/** Records an answer. In the workout it also moves the phrase between boxes, and a mistake comes back. */
+function answerItem(ok, extra = {}) {
   const d = drill;
   if (d.answers[d.index]) return;
-  d.answers[d.index] = { ok, choice };
+  const item = d.items[d.index];
+  const before = progress[item.phrase.en];
+  d.answers[d.index] = { ok, ...extra, before };
+  if (d.type === "workout") {
+    progress[item.phrase.en] = grade(before, ok);
+    save("learnProgress", progress);
+    if (!ok && !item.retry) { // once more, another way, three items later
+      const order = WORKOUT_FORMATS.filter((f) => f !== item.format);
+      const again = makeItem(item.phrase, order[Math.floor(Math.random() * order.length)]);
+      d.items.splice(Math.min(d.index + 3, d.items.length), 0, { ...again, retry: true });
+    }
+  }
   if (countCard()) { d.celebrate = true; confetti(); }
-  renderDrill(d.kind, d.lesson);
+  renderSession();
 }
 
-function nextDrillItem() {
+// "My answer is right too" (translation only): another correct way to say it.
+function acceptItem() {
+  const d = drill;
+  const a = d.answers[d.index];
+  const phrase = d.items[d.index].phrase;
+  a.accepted = true;
+  a.ok = true;
+  if (d.type === "workout") {
+    progress[phrase.en] = grade(a.before, true);
+    save("learnProgress", progress);
+    const retry = d.items.findIndex((it, i) => i > d.index && it.retry && it.phrase === phrase);
+    if (retry > 0) d.items.splice(retry, 1);
+  }
+  renderSession();
+}
+
+function checkTyped(giveUp = false) {
+  const d = drill;
+  const q = d.items[d.index].phrase;
+  const field = document.getElementById("exAnswer");
+  const typed = giveUp ? "" : (field?.value ?? d.ui.typed ?? "");
+  if (!giveUp && !typed.trim()) return field?.focus();
+  if (!giveUp && /[а-яё]/i.test(typed)) { // typed with the Russian keyboard
+    field.classList.add("cyrillic");
+    if (!document.getElementById("keyboardHint")) {
+      field.after(h("p", { class: "keyboard-hint", id: "keyboardHint", role: "alert" }, "Похоже, включена русская клавиатура. Переключите её на английскую (кнопка с глобусом) и напишите ответ латиницей."));
+    }
+    return field.focus();
+  }
+  const result = checkWriting(q.en, typed);
+  answerItem(result.correct, { typed, result, accepted: false });
+}
+
+function nextItem() {
   const d = drill;
   attempt?.cancel();
   stopSound();
+  const item = d.items[d.index];
+  if (!d.answers[d.index] && item.format === "intro") {
+    d.answers[d.index] = { ok: true, intro: true };
+    if (countCard()) { d.celebrate = true; confetti(); }
+  }
   d.index++;
-  d.revealed = false;
-  d.feedback = null;
-  if (d.index >= d.items.length) {
+  d.ui = {};
+  if (d.type === "placement" && d.index === d.items.length && !d.level) {
+    const passed = d.answers.slice(d.blockStart).filter((a) => a.ok).length >= 2;
+    const step = placementStep(d.results, d.levelIdx, passed);
+    d.results = step.results;
+    if (step.level) d.level = step.level;
+    else {
+      d.levelIdx = step.next;
+      d.blockStart = d.items.length;
+      d.items.push(...placementBlock(step.next));
+    }
+  }
+  if (d.type === "drill" && d.index === d.items.length) {
     const score = d.answers.filter((a) => a.ok).length;
     const mine = (skills[d.lesson.id] ??= {});
     d.previousBest = mine[d.kind]?.best ?? null;
     mine[d.kind] = { best: Math.max(score, mine[d.kind]?.best ?? 0), last: score, total: d.items.length, at: Date.now() };
     save("learnSkills", skills);
   }
-  renderDrill(d.kind, d.lesson);
+  renderSession();
   scrollTo(0, 0);
-  // Listening: play the next phrase within the tap, so phones allow the sound.
-  if (d.kind === "listen" && d.index < d.items.length) speak(d.items[d.index].en, speed, document.querySelector(".big-play"));
+  // Play within the tap, so phones allow the sound; or open the keyboard for a typed answer.
+  const now = d.items[d.index];
+  if (now && ["pick-heard", "dictation", "intro"].includes(now.format)) speak(now.phrase.en, speed, document.querySelector(".big-play"));
+  else document.getElementById("exAnswer")?.focus({ preventScroll: true });
 }
 
-async function drillSpeak() {
+async function sessionSpeak() {
   const d = drill;
   if (attempt) return attempt.finish(); // second tap: done speaking
   const index = d.index;
-  const q = d.items[index];
-  d.feedback = { state: "listening", heard: "" };
-  renderDrill(d.kind, d.lesson);
+  const q = d.items[index].phrase;
+  d.ui.feedback = { state: "listening", heard: "" };
+  renderSession();
   const btn = document.getElementById("drillSay");
   btn?.replaceChildren(icon("stop"), "Готово");
   btn?.classList.add("rec");
@@ -1662,18 +1802,161 @@ async function drillSpeak() {
     });
     if (drill !== d || d.index !== index || heard === null) return;
     const result = compareSpeech(q.en, heard);
-    d.feedback = { state: "result", heard, result };
+    d.ui.feedback = { state: "result", heard, result };
     const ok = result.score >= 0.8;
-    if (!d.answers[index]) {
-      d.answers[index] = { ok, score: result.score };
-      if (countCard()) { d.celebrate = true; confetti(); }
-    } else if (ok) d.answers[index].ok = true; // a better try counts
+    if (!d.answers[index]) return answerItem(ok, { score: result.score });
+    if (ok && !d.answers[index].ok) { // a better try counts
+      d.answers[index].ok = true;
+      if (d.type === "workout") { progress[q.en] = grade(d.answers[index].before, true); save("learnProgress", progress); }
+    }
   } catch (err) {
     if (drill !== d) return;
     const denied = err?.name === "NotAllowedError" || err?.name === "SecurityError";
-    d.feedback = { state: "error", message: denied ? "Разрешите доступ к микрофону в настройках браузера и попробуйте снова." : err.message };
+    d.ui.feedback = { state: "error", message: denied ? "Разрешите доступ к микрофону в настройках браузера и попробуйте снова." : err.message };
   }
-  renderDrill(d.kind, d.lesson);
+  renderSession();
+}
+
+function renderSession() {
+  const d = drill;
+  if (d.type === "placement" ? d.level : d.index >= d.items.length) {
+    if (d.type === "drill") return renderDrillResults();
+    if (d.type === "workout") return renderWorkoutResults();
+    return renderPlacementResults();
+  }
+  const item = d.items[d.index];
+  const q = item.phrase;
+  const format = FORMATS[item.format];
+  const a = d.answers[d.index] ?? null;
+  const isNew = d.shownIndex !== d.index;
+  d.shownIndex = d.index;
+  const celebrate = d.celebrate;
+  d.celebrate = null;
+  prefetch(q.en);
+  prefetch(d.items[d.index + 1]?.phrase.en);
+
+  const head = d.type === "drill"
+    ? { title: `${DRILLS[d.kind].title} · ${d.lesson.title}`, icon: DRILLS[d.kind].icon, back: lessonBack(d.lesson), count: `${d.index + 1} из ${d.items.length}` }
+    : d.type === "workout"
+      ? { title: `Тренировка дня · ${format.name}`, icon: "zap", back: backLink(`#${currentTrack}`, "Курс"), count: `${d.index + 1} из ${d.items.length}` }
+      : { title: `Тест уровня · уровень ${item.level}`, icon: "target", back: backLink(`#${currentTrack}`, "Курс"), count: `Вопрос ${d.index + 1}` };
+  document.title = `${head.title} · Курс английского`;
+
+  const answerLine = () => h("div", { class: "drill-answer" }, playButton(q.en), h("span", { class: "line-text" },
+    h("span", { class: "en", lang: "en" }, q.en), q.say ? h("span", { class: "say", lang: "ru" }, q.say) : null, q.ru ? h("span", { class: "ru" }, q.ru) : null));
+  const listenRow = () => (canPlay()
+    ? h("div", { class: "listen-row" },
+        h("button", { class: "big-play", type: "button", "aria-label": "Послушать", onclick: (e) => speak(q.en, speed, e.currentTarget) }, icon("play")),
+        h("button", { class: "btn small", type: "button", onclick: (e) => speak(q.en, 0.5, e.currentTarget) }, "Медленно"))
+    : h("p", { class: "hint" }, "Озвучка недоступна в этом браузере."));
+  const options = (list, right, lang) => h("div", { class: "choices", role: "group", "aria-label": "Варианты ответа" },
+    list.map((opt) => {
+      const state = a ? (opt === right ? " right" : opt === a.choice ? " wrong" : "") : "";
+      return h("button", { class: `choice${state}`, type: "button", lang, disabled: a ? true : null, onclick: () => answerItem(opt === right, { choice: opt }) },
+        a && opt === right ? icon("check") : null, opt);
+    }));
+  const typedField = () => {
+    const field = h("textarea", {
+      class: "answer", id: "exAnswer", lang: "en", rows: "3", "aria-label": "Ваш ответ по-английски", placeholder: "Напишите по-английски",
+      autocomplete: "off", autocorrect: "off", autocapitalize: "sentences", spellcheck: "false", enterkeyhint: "done",
+      oninput: (e) => { d.ui.typed = e.target.value; e.target.classList.remove("cyrillic"); document.getElementById("keyboardHint")?.remove(); },
+      onkeydown: (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); checkTyped(); } },
+    });
+    field.value = d.ui.typed ?? "";
+    return field;
+  };
+
+  let body;
+  switch (item.format) {
+    case "pick-heard": body = [listenRow(), options(item.options, q.en, "en"), a ? answerLine() : null]; break;
+    case "pick-meaning": body = [h("div", { class: "en-big", lang: "en" }, q.en), options(item.options, q.ru, "ru"), a ? answerLine() : null]; break;
+    case "pick-correct":
+      body = [options(item.options, q.en, "en"), a ? h("div", { class: "drill-answer" }, playButton(q.en),
+        h("span", { class: "line-text" }, h("span", { class: "en", lang: "en" }, q.en), h("span", { class: "ru" }, q.why))) : null];
+      break;
+    case "cloze": {
+      const c = item.cloze;
+      body = [
+        h("div", { class: "en-big cloze", lang: "en" }, c.before, h("span", { class: `gap${a ? (a.ok ? " ok" : " bad") : ""}` }, a ? c.answer : "   "), c.after),
+        h("p", { class: "ru-hint" }, q.ru),
+        options(item.options, c.answer, "en"),
+        a ? answerLine() : null,
+      ];
+      break;
+    }
+    case "dictation": body = [listenRow(), a ? checkBlock(q, a, null) : typedField()]; break;
+    case "write": body = [h("div", { class: "ru-big" }, q.ru), a ? checkBlock(q, a, acceptItem) : typedField()]; break;
+    case "intro":
+      body = [
+        h("div", { class: "en-big", lang: "en" }, tappableWords(q.en)),
+        q.say ? h("div", { class: "say", lang: "ru" }, q.say) : null,
+        h("div", { class: "ru" }, q.ru),
+        listenRow(),
+      ];
+      break;
+    default: { // speak
+      const auto = Boolean(Recognizer);
+      body = [
+        h("div", { class: "ru-big" }, q.ru),
+        d.ui.feedback ? feedbackBlock(d.ui.feedback) : null,
+        d.ui.revealed || a ? answerLine() : null,
+        a && !auto ? h("div", { class: `self-mark ${a.ok ? "good" : "bad"}` }, a.ok ? [icon("check"), "Получилось"] : "Не получилось — в следующий раз получится") : null,
+        h("div", { class: "tools" },
+          auto ? h("button", { class: `btn${a ? "" : " primary"}`, type: "button", id: "drillSay", onclick: () => sessionSpeak() }, icon("mic"), a ? "Сказать ещё раз" : "Сказать") : null,
+          !auto && !d.ui.revealed && !a ? h("button", { class: "btn primary", type: "button", onclick: () => { d.ui.revealed = true; renderSession(); } }, "Проверить себя") : null,
+          auto && !d.ui.revealed && !a ? h("button", { class: "btn", type: "button", onclick: () => { d.ui.revealed = true; renderSession(); } }, "Подсказка") : null),
+        !auto && d.ui.revealed && !a
+          ? h("div", { class: "grade" },
+              h("button", { class: "btn", type: "button", onclick: () => answerItem(false) }, icon("repeat"), "Не вышло"),
+              h("button", { class: "btn primary", type: "button", onclick: () => answerItem(true) }, icon("check"), "Получилось"))
+          : null,
+        auto ? null : h("p", { class: "hint" }, "Скажите вслух, потом откройте ответ и честно отметьте себя."),
+      ];
+    }
+  }
+
+  const typed = item.format === "dictation" || item.format === "write";
+  const answered = a || item.format === "intro";
+  const last = d.type !== "placement" && d.index + 1 >= d.items.length;
+  setView(
+    h("div", { class: "nav" }, head.back, h("span", { class: "count num" }, head.count)),
+    d.type === "placement" ? null : h("div", { class: "meter" }, h("i", { style: `width: ${(d.index / d.items.length) * 100}%` })),
+    celebrate
+      ? h("div", { class: "celebrate", role: "status" }, lessonIcon("trophy", "celebrate-icon"),
+          h("span", {}, h("b", {}, "Цель на сегодня выполнена!"), ` ${streakText(streak(stats.days))}.`))
+      : null,
+    h("section", { class: `card flash drill${isNew ? " enter" : ""}${item.format === "intro" ? " intro" : ""}`, "aria-label": head.title },
+      h("div", { class: "flash-head" }, lessonIcon(head.icon, "tile small"), h("span", {}, head.title)),
+      h("p", { class: "hint" }, format.ask),
+      body,
+    ),
+    answered
+      ? h("button", { class: "btn primary wide", type: "button", id: "nextBtn", onclick: () => nextItem() }, last ? "Результаты" : "Дальше", icon("next"))
+      : typed
+        ? h("div", { class: "grade" },
+            h("button", { class: "btn", type: "button", onclick: () => checkTyped(true) }, "Не знаю"),
+            h("button", { class: "btn primary", type: "button", onclick: () => checkTyped() }, icon("check"), "Проверить"))
+        : d.type === "placement"
+          ? h("button", { class: "btn wide", type: "button", onclick: () => answerItem(false, { choice: null }) }, "Не знаю")
+          : null,
+    h("p", { class: "tip" }, format.tip),
+  );
+  if (answered) document.getElementById("nextBtn")?.focus({ preventScroll: true });
+  else if (typed && matchMedia("(hover: hover)").matches) document.getElementById("exAnswer")?.focus({ preventScroll: true });
+}
+
+// Answers, each marked, with the phrase to listen to again.
+function answersCard(d) {
+  const rows = d.items.map((item, i) => ({ item, a: d.answers[i] })).filter(({ item }) => item.format !== "intro");
+  return h("section", { class: "card" },
+    h("h2", {}, "Ответы"),
+    h("ol", { class: "results" }, rows.map(({ item, a }) => {
+      const q = item.phrase;
+      return h("li", {},
+        h("span", { class: `mark${a?.ok ? "" : " no"}`, "aria-label": a?.ok ? "Верно" : "Ошибка" }, icon(a?.ok ? "check" : "x", a?.ok ? "i" : "u")),
+        h("span", { class: "line-text" }, h("span", { class: "en", lang: "en" }, q.en), h("span", { class: "ru-line" }, q.ru || q.why || "")),
+        playButton(q.en));
+    })));
 }
 
 function renderDrillResults() {
@@ -1686,7 +1969,7 @@ function renderDrillResults() {
   const lessonDone = unitDone(lesson);
   document.title = `${info.title}: результат · ${lesson.title} · Курс английского`;
   if (!d.celebrated) { d.celebrated = true; if (passed) confetti(); }
-  const again = () => { startDrill(kind, lesson); renderDrill(kind, lesson); scrollTo(0, 0); };
+  const again = () => { startDrill(kind, lesson); renderSession(); scrollTo(0, 0); };
   setView(
     h("div", { class: "nav" }, lessonBack(lesson)),
     h("section", { class: "card done-card" },
@@ -1701,22 +1984,73 @@ function renderDrillResults() {
         ? h("p", { class: "best num" }, score > d.previousBest ? `Новый рекорд! Было ${d.previousBest} из ${total}.` : `Лучший результат: ${d.previousBest} из ${total}.`)
         : null,
     ),
-    h("section", { class: "card" },
-      h("h2", {}, "Ответы"),
-      h("ol", { class: "results" }, d.items.map((q, i) => {
-        const ok = d.answers[i]?.ok;
-        return h("li", {},
-          h("span", { class: `mark${ok ? "" : " no"}`, "aria-label": ok ? "Верно" : "Ошибка" }, icon(ok ? "check" : "x", ok ? "i" : "u")),
-          h("span", { class: "line-text" }, h("span", { class: "en", lang: "en" }, q.en), h("span", { class: "ru-line" }, q.ru)),
-          playButton(q.en));
-      })),
-    ),
+    answersCard(d),
     lessonTasks(lesson),
     h("div", { class: "btn-stack" },
       passed ? nextStepButton(lesson, true, kind) : h("button", { class: "btn primary", type: "button", onclick: again }, icon("repeat"), "Ещё раз"),
       passed ? h("button", { class: "btn", type: "button", onclick: again }, icon("repeat"), "Ещё раз") : null,
       skillFocus ? h("a", { class: "btn", href: `#skill-${kind}` }, `Все уроки: ${info.title}`) : h("a", { class: "btn", href: `#unit-${lesson.id}` }, "К уроку"),
     ),
+  );
+}
+
+function renderWorkoutResults() {
+  const d = drill;
+  const checks = d.items.map((item, i) => ({ item, a: d.answers[i] })).filter(({ item }) => item.format !== "intro");
+  const right = checks.filter(({ a }) => a?.ok).length;
+  const learned = d.items.filter((item) => item.format === "intro").length;
+  document.title = "Тренировка дня: результат · Курс английского";
+  if (!d.celebrated) { d.celebrated = true; confetti(); }
+  const days = streak(stats.days);
+  setView(
+    h("div", { class: "nav" }, backLink(`#${currentTrack}`, "Курс")),
+    h("section", { class: "card done-card" },
+      lessonIcon("zap", "done-mark"),
+      h("p", { class: "eyebrow" }, "Тренировка дня"),
+      h("h1", { class: "num" }, `${right} из ${checks.length}`),
+      h("div", { class: "done-stats" },
+        h("span", {}, h("b", { class: "num" }, right), "верно"),
+        h("span", {}, h("b", { class: "num" }, learned), plural(learned, "новая фраза", "новые фразы", "новых фраз")),
+        h("span", {}, h("b", { class: "num" }, days), plural(days, "день подряд", "дня подряд", "дней подряд"))),
+      h("p", { class: "lede" }, right === checks.length ? "Без единой ошибки!" : "Ошибки вернутся на повторение — к ним всё запомнится."),
+    ),
+    answersCard(d),
+    h("div", { class: "btn-stack" },
+      h("button", { class: "btn primary", type: "button", onclick: () => { startWorkout(); renderSession(); scrollTo(0, 0); } }, icon("zap", "u"), "Ещё тренировка"),
+      h("a", { class: "btn", href: `#${currentTrack}` }, "К курсу")),
+  );
+}
+
+function renderPlacementResults() {
+  const d = drill;
+  if (!d.saved) { d.saved = true; setMyLevel(d.level, true); confetti(); }
+  const level = LEVELS.find((l) => l.track === "daily" && l.badge === d.level);
+  const cefr = /\((≈ [^)]+)\)$/.exec(level.about)?.[1] ?? "";
+  const below = LEVEL_LETTERS.slice(0, LEVEL_LETTERS.indexOf(d.level));
+  document.title = "Тест уровня: результат · Курс английского";
+  setView(
+    h("div", { class: "nav" }, backLink(`#${currentTrack}`, "Курс")),
+    h("section", { class: "card done-card" },
+      lessonIcon("target", "done-mark"),
+      h("p", { class: "eyebrow" }, "Тест уровня"),
+      h("h1", {}, `Ваш уровень: ${d.level}`),
+      h("p", { class: "best" }, `${level.title} · ${cefr}`),
+      h("p", { class: "lede" }, below.length
+        ? `Курс начнётся с уровня ${d.level}: тренировка дня и «Продолжить» берут фразы оттуда. Уроки уровней ${below.length > 1 ? `${below[0]}–${below.at(-1)}` : below[0]} всегда можно открыть.`
+        : "Начнём с самых первых фраз — так будет быстрее всего."),
+    ),
+    h("section", { class: "card" },
+      h("h2", {}, "По уровням"),
+      h("ol", { class: "results" }, LEVEL_LETTERS.split("").filter((x) => x in d.results).map((x) => {
+        const passed = d.results[x];
+        return h("li", {},
+          h("span", { class: `mark${passed ? "" : " no"}` }, icon(passed ? "check" : "x", passed ? "i" : "u")),
+          h("span", { class: "line-text" }, h("span", { class: "en" }, `Уровень ${x}`), h("span", { class: "ru-line" }, passed ? "знаете" : "есть что подучить")));
+      }))),
+    h("div", { class: "btn-stack" },
+      h("a", { class: "btn primary", href: "#workout" }, icon("zap", "u"), "Тренировка дня"),
+      h("a", { class: "btn", href: `#${currentTrack}` }, `Уроки уровня ${d.level}`, icon("next")),
+      h("button", { class: "btn", type: "button", onclick: () => { startPlacement(); renderSession(); scrollTo(0, 0); } }, icon("repeat"), "Пройти тест заново")),
   );
 }
 
@@ -1735,13 +2069,13 @@ function syncCode() {
 function setSyncCode(code) {
   try { if (code) localStorage.setItem(SYNC_CODE_KEY, code); else localStorage.removeItem(SYNC_CODE_KEY); } catch { /* storage blocked */ }
 }
-const localProgress = () => ({ learnProgress: progress, learnTests: tests, learnSkills: skills, learnStats: stats });
-const hasProgress = () => Object.keys(progress).length + Object.keys(tests).length + Object.keys(skills).length + Object.keys(stats.days).length > 0;
+const localProgress = () => ({ learnProgress: progress, learnTests: tests, learnSkills: skills, learnStats: stats, learnPlacement: placement });
+const hasProgress = () => Object.keys(progress).length + Object.keys(tests).length + Object.keys(skills).length + Object.keys(stats.days).length + Object.keys(placement).length > 0;
 
 /** Takes merged progress as this device's own, in memory and in storage, without saving it back. */
 function adoptProgress(data) {
   const before = JSON.stringify(localProgress());
-  for (const [key, target] of [["learnProgress", progress], ["learnTests", tests], ["learnSkills", skills], ["learnStats", stats]]) {
+  for (const [key, target] of [["learnProgress", progress], ["learnTests", tests], ["learnSkills", skills], ["learnStats", stats], ["learnPlacement", placement]]) {
     for (const k of Object.keys(target)) delete target[k];
     Object.assign(target, data[key]);
     try { localStorage.setItem(key, JSON.stringify(target)); } catch { /* storage full or blocked */ }
@@ -1920,7 +2254,7 @@ async function shareCode(code) {
   refreshSyncCard();
 }
 
-// ---------------------------------------------------------------- navigation (#unit-cafe, #practice-cafe, #test-cafe, #listen-cafe, #skill-speak…)
+// ---------------------------------------------------------------- navigation (#unit-cafe, #practice-cafe, #test-cafe, #listen-cafe, #skill-speak, #workout, #placement…)
 function route(_event, keepScroll = false) {
   const top = () => { if (!keepScroll) scrollTo(0, 0); };
   attempt?.cancel();
@@ -1929,6 +2263,14 @@ function route(_event, keepScroll = false) {
   if (!hash.startsWith("test-")) testRun = null;
   const skillPage = /^skill-(speak|listen|read|write)$/.exec(hash);
   if (skillPage) { session = null; drill = null; renderSkill(skillPage[1]); return top(); }
+  if (hash === "workout" || hash === "placement") {
+    session = null;
+    skillFocus = null;
+    const finished = drill && (drill.type === "placement" ? drill.level : drill.index >= drill.items.length);
+    if (drill?.type !== hash || finished) (hash === "workout" ? startWorkout : startPlacement)();
+    renderSession();
+    return top();
+  }
   const skill = /^(listen|read|speak)-(.+)$/.exec(hash);
   if (!skill) drill = null;
   if (skill) {

@@ -3,8 +3,8 @@
 // and on the device (keeping anything done while a save was on its way).
 import { INTERVALS } from "./learn-core.js";
 
-/** What is saved: cards (spaced repetition), test and exercise results, and the daily goal. */
-export const SYNC_KEYS = ["learnProgress", "learnTests", "learnSkills", "learnStats"];
+/** What is saved: cards (spaced repetition), test and exercise results, the daily goal and her level. */
+export const SYNC_KEYS = ["learnProgress", "learnTests", "learnSkills", "learnStats", "learnPlacement"];
 /** Codes use letters and digits that can't be mistaken for each other (no 0/O, 1/I/L). */
 export const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 
@@ -48,7 +48,8 @@ function syncMergeResult(a, b) {
 /**
  * Combines two copies of someone's progress. Each card keeps its latest answer (so a phrase
  * forgotten on one phone is reviewed again there too); a test or exercise keeps its best score and
- * its latest try; each day keeps the larger card count. The daily goal comes from `newer`.
+ * its latest try; each day keeps the larger card count; the latest level choice wins. The daily goal
+ * comes from `newer`.
  * Anything malformed is dropped, so what is stored is always clean.
  */
 export function mergeProgress(older = {}, newer = {}) {
@@ -93,7 +94,13 @@ export function mergeProgress(older = {}, newer = {}) {
     }
   }
   for (const day of Object.keys(days).sort().slice(0, -400)) delete days[day]; // a year is plenty
-  const goal = [b.learnStats?.goal, a.learnStats?.goal].find((g) => [5, 10, 20].includes(g)) ?? 10;
+  const goal = [b.learnStats?.goal, a.learnStats?.goal].find((g) => [5, 10, 20, 30, 50].includes(g)) ?? 20;
 
-  return { learnProgress, learnTests, learnSkills, learnStats: { goal, days } };
+  // Her level (chosen, or found by the placement test): the latest choice wins.
+  const level = [a.learnPlacement, b.learnPlacement]
+    .filter((x) => syncIsObject(x) && /^[A-G]$/.test(x.level) && Number.isFinite(x.at))
+    .sort((x, y) => y.at - x.at)[0];
+  const learnPlacement = level ? { level: level.level, at: level.at, tested: Boolean(level.tested) } : {};
+
+  return { learnProgress, learnTests, learnSkills, learnStats: { goal, days }, learnPlacement };
 }

@@ -62,9 +62,12 @@ test("merging drops anything malformed", () => {
   assert.equal(Object.getPrototypeOf(m.learnProgress), Object.prototype);
   assert.deepEqual(Object.keys(m.learnTests), ["good"]);
   assert.deepEqual(m.learnSkills, { good: { listen: { best: 2, last: 2, total: 8, at: 0 } } });
-  assert.deepEqual(m.learnStats, { goal: 10, days: { "2026-11-06": 3 } });
+  assert.deepEqual(m.learnStats, { goal: 20, days: { "2026-11-06": 3 } });
   assert.equal(m.extra, undefined);
-  assert.deepEqual(mergeProgress(null, "nonsense"), { learnProgress: {}, learnTests: {}, learnSkills: {}, learnStats: { goal: 10, days: {} } });
+  assert.deepEqual(mergeProgress(null, "nonsense"), { learnProgress: {}, learnTests: {}, learnSkills: {}, learnStats: { goal: 20, days: {} }, learnPlacement: {} });
+  assert.deepEqual(mergeProgress({ learnPlacement: { level: "D", at: 5, tested: true } }, { learnPlacement: { level: "B", at: 3 } }).learnPlacement,
+    { level: "D", at: 5, tested: true }, "the latest level choice wins");
+  assert.deepEqual(mergeProgress({}, { learnPlacement: { level: "Z", at: 5 } }).learnPlacement, {});
 });
 
 function withEnv(vars, fn) {

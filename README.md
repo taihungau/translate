@@ -36,9 +36,29 @@ Both can be turned off in Settings → Pronunciation.
 ## English course (Learn)
 
 `learn.html` (the book tab, or "Курс английского" on the start screen) is an English course for a
-Russian speaker, explained in Russian: **124 units, 991 phrases, in three tracks and seven levels,
+Russian speaker, explained in Russian: **135 units, 1101 phrases, in four tracks and seven levels,
 A to G** (roughly CEFR A0, A1, A2, B1, B2, C1, C2; a letter means the same in every track), each
 unit with its own icon.
+
+Built to learn fast, not just to browse:
+
+- **Тест уровня (`#placement`), about 5 minutes:** three questions a level (a translation, a
+  grammar choice "which is right?", and a phrase to hear), starting at C and going up after a
+  passed level (2 of 3) and down after a failed one, until it finds the first level she doesn't
+  know yet. "Не знаю" keeps it honest. The result sets her level.
+- **Мой уровень, A–G:** a switch on the course page and on every skill page. A section shows only
+  that level's lessons; "Продолжить" and the workout start there (lower levels stay one tap away).
+  Picking a level sets it everywhere; a section without that level shows the nearest one (Работа
+  starts at C).
+- **Тренировка дня (`#workout`), about 10 minutes:** 20 items mixing everything due for review with
+  new phrases from her level. A new phrase is shown and heard first, then checked a few items later;
+  reviews rotate through dictation, translation, fill-the-gap and speaking, so each phrase is
+  recalled a different way. A mistake comes back three items later in another form, and every answer
+  moves the phrase through spaced repetition.
+- **Harder from level C:** a lesson's listening becomes dictation (type what you hear) and its
+  reading becomes fill-the-gap (pick the missing word, with the Russian as a hint); A and B keep
+  multiple choice.
+- **Daily goal** of 10, 20 (default), 30 or 50 answers.
 
 - **Каждый день (every day), 58 units, A → G:** first words and "I don't understand", meeting
   people, family, likes, time, routine, café, shopping, clothes, home, weather, directions,
@@ -57,11 +77,18 @@ unit with its own icon.
 - **Работа (work), 22 units, C → G:** introducing yourself, colleagues, requests, calls, meetings,
   updates, feedback, emails, presentations, interviews, negotiating, networking, leading a team,
   difficult conversations, pitching, strategy, public speaking and talking to executives.
+- **Косметология (cosmetology), 11 units, B → D:** a special section for work in a beauty clinic,
+  always shown in full whatever her level. *Head and face* (B): parts of the head and face,
+  eyes/brows/lips, skin types, hair and scalp. *In the treatment room* (C): welcoming a client, a
+  skin consultation (allergies, medication, pregnancy, routine), a facial step by step, home care
+  advice. *Treatments* (D): skin concerns (acne, pigmentation, fine lines, dehydration), peels and
+  injections, aftercare and contraindications. Every unit has cards and all four skills.
 - **Cards and four skills per unit**, shown as a checklist (the unit turns green when all five are
   done): *Карточки* (learn every phrase), then the skills in two pairs: spoken, *Говорение* (say it
   in English: checked by speech recognition in the app, self-checked elsewhere) and *Аудирование*
-  (hear a phrase and pick what was said); written, *Чтение* (read a phrase and pick its meaning)
-  and *Письмо* (the written test). Each exercise has 8 phrases and is passed with 6.
+  (hear a phrase and pick what was said; dictation from level C); written, *Чтение* (read a phrase
+  and pick its meaning; fill-the-gap from level C) and *Письмо* (the written test). Each exercise
+  has 8 phrases and is passed with 6.
 - **Lessons by skill:** the course page's "Навыки" card (2×2, spoken and written) opens a page per
   skill (`#skill-speak`, `#skill-listen`, `#skill-read`, `#skill-write`) listing every lesson of a
   section with that skill's own tick and score. Working from there, an exercise's back button
@@ -80,8 +107,8 @@ unit with its own icon.
   that fills up and turns into a green tick when both are done, with ✓ chips for the two tasks;
   every phrase on a lesson page gets its own tick; each level counts its finished lessons and its
   bar turns green when all are done.
-- **Daily goal and streak:** 5, 10 or 20 cards a day with a progress ring, days in a row, and a
-  small celebration when the goal is met or a unit is finished.
+- **Daily goal and streak:** a progress ring, days in a row, and a small celebration when the goal
+  is met or a unit is finished.
 - **Speaking check:** she says the phrase, Deepgram writes down what it heard, and the missed words
   are marked in red with a score.
 - **Written test** at the end of every unit (`#test-<unit>`): the unit's phrases in Russian, in a
@@ -104,8 +131,8 @@ unit with its own icon.
   of seconds; on another phone she types the code, or opens the link "Поделиться" makes
   (`learn.html?code=…`), and everything comes back. `POST /api/progress` merges what a phone sends
   with what is stored (`public/learn-sync.js`, the same merge on both sides): each card keeps its
-  latest answer, each test or exercise its best score, each day its larger card count, so two
-  phones never overwrite each other. Codes are kept two years after the last save.
+  latest answer, each test or exercise its best score, each day its larger card count, and her
+  level the latest choice, so two phones never overwrite each other. Codes are kept two years after the last save.
   **Setup:** on Vercel, Storage → Upstash → Redis (free) → connect to the project (any prefix),
   then redeploy. Without it, or in the published copy, progress stays in the browser.
 - Lesson icons: [Lucide](https://lucide.dev) 1.56.0 (ISC; some from Feather, MIT), drawn from a
