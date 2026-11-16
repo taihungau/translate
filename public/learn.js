@@ -567,18 +567,26 @@ const trackLessons = (track) => LESSONS.filter((lesson) => trackOf(lesson) === t
 const UNIT_NO = new Map(TRACKS.flatMap((t) => trackLessons(t.id).map((lesson, i) => [lesson.id, i + 1])));
 const knownOnce = (phrase) => (progress[phrase.en]?.box ?? 0) >= 1;
 // A lesson is a checklist of five tasks, one per skill: learn the phrases with cards (each one
-// "Знаю" at least once), then listening, reading, speaking and writing, each passed with 6 of 8 or
+// "Знаю" at least once), then speaking, listening, reading and writing, each passed with 6 of 8 or
 // better. All five ticked: the lesson is done and turns green.
 const TEST_SIZE = 8;
 const testTotal = (lesson) => Math.min(TEST_SIZE, lesson.phrases.length);
 const testNeed = (total) => Math.ceil(total * 0.75);
+// The four skills come in two pairs: spoken (speaking, listening) and written (reading, writing).
 const TASKS = [
   { key: "cards", title: "Карточки", icon: "layers", what: "Выучить фразы урока" },
-  { key: "listen", title: "Аудирование", icon: "headphones", what: "Послушать и выбрать, что прозвучало" },
-  { key: "read", title: "Чтение", icon: "book-open-text", what: "Прочитать и выбрать перевод" },
-  { key: "speak", title: "Говорение", icon: "mic", what: "Сказать фразы по-английски вслух" },
-  { key: "write", title: "Письмо", icon: "pencil-line", what: "Написать фразы по-английски" },
+  { key: "speak", title: "Говорение", icon: "mic", what: "Сказать фразы по-английски вслух", group: "Устная речь",
+    about: "Видите фразу по-русски и говорите её по-английски вслух. В приложении распознавание речи отмечает каждое слово; в других местах вы проверяете себя сами." },
+  { key: "listen", title: "Аудирование", icon: "headphones", what: "Послушать и выбрать, что прозвучало", group: "Устная речь",
+    about: "Слушаете фразу без текста и выбираете, что прозвучало. Если быстро — нажмите «Медленно»." },
+  { key: "read", title: "Чтение", icon: "book-open-text", what: "Прочитать и выбрать перевод", group: "Письменная речь",
+    about: "Читаете фразу по-английски и выбираете правильный перевод." },
+  { key: "write", title: "Письмо", icon: "pencil-line", what: "Написать фразы по-английски", group: "Письменная речь",
+    about: "Пишете фразы урока по-английски, а приложение проверяет каждое слово, как учитель." },
 ];
+const SKILLS = TASKS.filter((t) => t.group);
+const SKILL_GROUPS = [["Устная речь", ["speak", "listen"]], ["Письменная речь", ["read", "write"]]];
+const taskInfo = (key) => TASKS.find((t) => t.key === key);
 const taskHref = (lesson, key) => (key === "cards" ? `#practice-${lesson.id}` : key === "write" ? `#test-${lesson.id}` : `#${key}-${lesson.id}`);
 const taskResult = (lesson, key) => (key === "write" ? tests[lesson.id] : skills[lesson.id]?.[key]);
 const phrasesDone = (lesson) => lesson.phrases.every(knownOnce);
@@ -634,43 +642,140 @@ function taskChips(lesson) {
     h("span", { class: "task-sum num" }, `${count}/${TASKS.length}`));
 }
 
-// The lesson's checklist, on its page and when an exercise ends.
+// The lesson's checklist, on its page and when an exercise ends: the cards, then the four skills
+// as a 2×2 grid, spoken and written.
 function lessonTasks(lesson) {
   const known = lesson.phrases.filter(knownOnce).length;
   const total = lesson.phrases.length;
   const count = doneCount(lesson);
+  const cardsDone = phrasesDone(lesson);
   const note = (t) => {
-    if (t.key === "cards") {
-      return phrasesDone(lesson) ? `Все ${total} ${plural(total, "фраза", "фразы", "фраз")} выучены` : `Карточки: «Знаю» на каждой фразе · ${known} из ${total}`;
-    }
     const r = taskResult(lesson, t.key);
     const of = r?.total ?? testTotal(lesson);
     if (taskDone(lesson, t.key)) return `Сдано: ${r.best} из ${r.total}`;
-    return r ? `Нужно ${testNeed(of)} из ${of} · лучший результат ${r.best}` : `${t.what} · нужно ${testNeed(of)} из ${of}`;
+    return r ? `Лучший ${r.best} · нужно ${testNeed(of)}` : `Нужно ${testNeed(of)} из ${of}`;
+  };
+  const skillTile = (t) => {
+    const done = taskDone(lesson, t.key);
+    return h("a", { class: `skill-tile${done ? " done" : ""}`, href: taskHref(lesson, t.key) },
+      tick(taskShare(lesson, t.key), done ? `${t.title}: выполнено` : `${t.title}: не выполнено`),
+      h("span", { class: "skill-name" }, icon(t.icon, "u"), t.title),
+      h("span", { class: "skill-count num" }, note(t)));
   };
   return h("section", { class: `card tasks-card${count === TASKS.length ? " done" : ""}`, "aria-label": "Задания урока" },
     h("div", { class: "card-head" },
       h("h2", {}, "Задания урока"),
       h("span", { class: "task-count num" }, count === TASKS.length ? [lessonIcon("trophy", "task-trophy"), "Урок пройден"] : `${count} из ${TASKS.length}`)),
-    h("ol", { class: "task-list" }, TASKS.map((t) => {
-      const done = taskDone(lesson, t.key);
-      return h("li", {},
-        h("a", { class: `task-row${done ? " done" : ""}`, href: taskHref(lesson, t.key) },
-          tick(taskShare(lesson, t.key), done ? "Выполнено" : "Не выполнено"),
-          h("span", { class: "unit-text" }, h("b", {}, icon(t.icon, "u"), t.title), h("small", {}, note(t))),
-          icon("next")));
-    })),
+    h("ol", { class: "task-list" }, h("li", {},
+      h("a", { class: `task-row${cardsDone ? " done" : ""}`, href: taskHref(lesson, "cards") },
+        tick(taskShare(lesson, "cards"), cardsDone ? "Выполнено" : "Не выполнено"),
+        h("span", { class: "unit-text" }, h("b", {}, icon("layers", "u"), "Карточки"),
+          h("small", {}, cardsDone ? `Все ${total} ${plural(total, "фраза", "фразы", "фраз")} выучены` : `«Знаю» на каждой фразе · ${known} из ${total}`)),
+        icon("next")))),
+    SKILL_GROUPS.flatMap(([group, keys]) => [
+      h("p", { class: "skills-group" }, group),
+      h("div", { class: "skill-grid" }, keys.map((key) => skillTile(taskInfo(key)))),
+    ]),
   );
 }
 
 // The next thing to do after an exercise: the lesson's next task, or the next lesson once it's done.
-function nextStepButton(lesson, primary = true) {
+// When she is going through one skill (opened from its page), the same exercise in the next lesson.
+let skillFocus = null; // "speak" | "listen" | "read" | "write" while working through one skill
+function nextStepButton(lesson, primary = true, kind = null) {
   const cls = `btn${primary ? " primary" : ""}`;
+  if (kind && skillFocus === kind) {
+    const info = taskInfo(kind);
+    const siblings = trackLessons(trackOf(lesson));
+    const after = siblings.slice(siblings.indexOf(lesson) + 1).find((l) => !taskDone(l, kind));
+    if (after) return h("a", { class: cls, href: taskHref(after, kind) }, icon(info.icon, "u"), `Дальше: урок ${UNIT_NO.get(after.id)} · ${after.title}`);
+    return h("a", { class: cls, href: `#skill-${kind}` }, icon(info.icon, "u"), `Все уроки: ${info.title}`);
+  }
   const t = nextTask(lesson);
   if (t) return h("a", { class: cls, href: taskHref(lesson, t.key) }, icon(t.icon, "u"), `Дальше: ${t.title}`);
   const siblings = trackLessons(trackOf(lesson));
   const next = siblings[siblings.indexOf(lesson) + 1];
   return next ? h("a", { class: cls, href: `#unit-${next.id}` }, `Урок ${UNIT_NO.get(next.id)}: ${next.title}`, icon("next")) : null;
+}
+
+// Back from an exercise: to the skill's page when working through one skill, else to the lesson.
+const lessonBack = (lesson) => (skillFocus ? backLink(`#skill-${skillFocus}`, taskInfo(skillFocus).title) : backLink(`#unit-${lesson.id}`, "Урок"));
+
+// The four skills on the course page, in their pairs; each opens the skill's own page.
+function skillsCard(track) {
+  const lessons = trackLessons(track);
+  const tile = (t) => {
+    const done = lessons.filter((l) => taskDone(l, t.key)).length;
+    return h("a", { class: `skill-tile${done === lessons.length ? " done" : ""}`, href: `#skill-${t.key}` },
+      lessonIcon(t.icon, `tile small${done === lessons.length ? " ok" : ""}`),
+      h("span", { class: "skill-name" }, t.title),
+      h("span", { class: "skill-count num" }, `${done} из ${lessons.length} ${plural(lessons.length, "урока", "уроков", "уроков")}`),
+      h("span", { class: "mini-meter" }, h("i", { style: `width: ${(done / lessons.length) * 100}%` })));
+  };
+  return h("section", { class: "card skills-card", "aria-label": "Навыки" },
+    h("div", { class: "card-head" }, h("h2", {}, "Навыки"), h("span", { class: "task-count" }, "уроки по навыкам")),
+    SKILL_GROUPS.flatMap(([group, keys]) => [
+      h("p", { class: "skills-group" }, group),
+      h("div", { class: "skill-grid" }, keys.map((key) => tile(taskInfo(key)))),
+    ]));
+}
+
+// One skill's page: every lesson of a section with this skill's exercise and its own tick.
+function renderSkill(kind) {
+  const info = taskInfo(kind);
+  skillFocus = kind;
+  const track = currentTrack;
+  const lessons = trackLessons(track);
+  const done = lessons.filter((l) => taskDone(l, kind)).length;
+  const next = lessons.find((l) => !taskDone(l, kind));
+  document.title = `${info.title} · Курс английского`;
+  const row = (lesson) => {
+    const ok = taskDone(lesson, kind);
+    const r = taskResult(lesson, kind);
+    return h("li", {},
+      h("a", { class: `unit${ok ? " done" : ""}${lesson === next ? " next" : ""}`, href: taskHref(lesson, kind) },
+        lessonIcon(lesson.icon),
+        h("span", { class: "unit-text" },
+          h("b", {}, lesson.title),
+          h("small", {}, `${UNIT_NO.get(lesson.id)} · ${lesson.en}`,
+            ok ? h("span", { class: "done-word" }, ` · сдано ${r.best} из ${r.total}`) : r ? ` · лучший ${r.best} из ${r.total}` : null)),
+        tick(taskShare(lesson, kind), ok ? "Сдано" : "Не сдано")));
+  };
+  setView(
+    h("div", { class: "nav" }, backLink(`#${track}`, "Курс"), themeToggle()),
+    h("header", { class: "unit-head" },
+      lessonIcon(info.icon, "tile big"),
+      h("div", {},
+        h("p", { class: "eyebrow" }, `Навык · ${info.group}`),
+        h("h1", {}, info.title),
+        h("p", { class: "lede" }, info.about))),
+    h("nav", { class: "tracks", "aria-label": "Разделы курса" },
+      TRACKS.map((t) => h("button", {
+        class: "track", type: "button", "aria-current": t.id === track ? "page" : null,
+        onclick: () => { currentTrack = t.id; save("learnTrack", t.id); renderSkill(kind); },
+      }, lessonIcon(t.icon, "track-icon"), h("span", {}, t.title)))),
+    h("section", { class: "card summary", "aria-label": "Прогресс" },
+      h("div", { class: "summary-stat" },
+        h("b", { class: "num" }, done),
+        h("span", {}, `из ${lessons.length} ${plural(lessons.length, "урока", "уроков", "уроков")} сдано · ${TRACKS.find((t) => t.id === track).title}`)),
+      h("div", { class: `meter${!next ? " done" : ""}` }, h("i", { style: `width: ${(done / lessons.length) * 100}%` })),
+      h("div", { class: "btn-row" },
+        next
+          ? h("a", { class: "btn primary", href: taskHref(next, kind) }, icon(info.icon, "u"), `${done ? "Продолжить" : "Начать"}: урок ${UNIT_NO.get(next.id)}`, icon("next"))
+          : h("span", { class: "btn" }, "Все уроки раздела сданы"))),
+    LEVELS.filter((level) => level.track === track).map((level) => {
+      const inLevel = LESSONS.filter((lesson) => lesson.level === level.id);
+      const count = inLevel.filter((l) => taskDone(l, kind)).length;
+      const all = count === inLevel.length;
+      const share = inLevel.reduce((sum, l) => sum + taskShare(l, kind), 0) / inLevel.length;
+      return h("section", { class: `level${all ? " done" : ""}`, "aria-label": level.title },
+        h("div", { class: "level-head" },
+          h("span", { class: "badge" }, level.badge ?? level.id), h("h3", {}, level.title),
+          h("span", { class: "level-count num" }, all ? icon("check") : null, `${count} из ${inLevel.length}`)),
+        h("div", { class: `meter thin${all ? " done" : ""}` }, h("i", { style: `width: ${share * 100}%` })),
+        h("ol", { class: "units" }, inLevel.map(row)));
+    }),
+  );
 }
 
 // A lesson's picture: a Lucide icon from the sprite in learn.html.
@@ -707,6 +812,7 @@ function deckFor(id) {
 // ---------------------------------------------------------------- views
 function renderCourse(track = currentTrack) {
   currentTrack = track;
+  skillFocus = null;
   save("learnTrack", track);
   document.title = "Курс английского";
   const info = TRACKS.find((t) => t.id === track);
@@ -727,13 +833,14 @@ function renderCourse(track = currentTrack) {
     ),
     h("header", {},
       h("h1", {}, "Курс английского"),
-      h("p", { class: "lede" }, `${LESSONS.length} ${plural(LESSONS.length, "урок", "урока", "уроков")} в трёх разделах и семи уровнях: от A (первые слова) до G (как носитель). В каждом уроке — пять заданий: карточки, аудирование, чтение, говорение и письмо.`),
+      h("p", { class: "lede" }, `${LESSONS.length} ${plural(LESSONS.length, "урок", "урока", "уроков")} в трёх разделах и семи уровнях: от A (первые слова) до G (как носитель). В каждом уроке — карточки и четыре навыка: говорение, аудирование, чтение и письмо.`),
     ),
     todayCard(),
     syncEnabled ? syncCard() : null,
     h("nav", { class: "tracks", "aria-label": "Разделы курса" },
       TRACKS.map((t) => h("a", { class: "track", href: `#${t.id}`, "aria-current": t.id === track ? "page" : null },
         lessonIcon(t.icon, "track-icon"), h("span", {}, t.title)))),
+    skillsCard(track),
     h("section", { class: "card summary", "aria-label": "Прогресс" },
       h("p", { class: "summary-about" }, info.about),
       h("div", { class: "summary-stat" },
@@ -801,6 +908,7 @@ function unitRow(lesson, next) {
 // The grammar programme: how a lesson works, every unit with what it teaches, and a 16-week plan
 // that pairs each grammar unit with two everyday lessons, marking the week she is on.
 function renderGrammarPlan() {
+  skillFocus = null;
   document.title = "Программа по грамматике · Курс английского";
   const grammar = trackLessons("grammar");
   const daily = trackLessons("daily");
@@ -842,7 +950,7 @@ function renderGrammarPlan() {
         ["Формы", "таблица: утверждение, отрицание, вопрос"],
         ["Частые ошибки", "как обычно ошибаются русскоговорящие и как правильно"],
         ["Примеры", "8 фраз с переводом, произношением русскими буквами и американской озвучкой"],
-        ["Пять заданий", "карточки, аудирование, чтение, говорение и письмо — урок пройден, когда все пять отмечены"],
+        ["Карточки и четыре навыка", "говорение, аудирование, чтение и письмо — урок пройден, когда все пять заданий отмечены"],
       ].map(([what, how]) => h("li", {}, h("b", {}, what), h("span", {}, how)))),
     ),
     ...LEVELS.filter((level) => level.track === "grammar").map((level) =>
@@ -884,6 +992,7 @@ function renderGrammarPlan() {
 }
 
 function renderUnit(lesson) {
+  skillFocus = null;
   const level = levelOf(lesson);
   const track = TRACKS.find((t) => t.id === level.track);
   const isGrammar = Boolean(lesson.table);
@@ -1182,7 +1291,7 @@ function renderTest(lesson) {
 
   setView(
     h("div", { class: "nav" },
-      backLink(`#unit-${lesson.id}`, "Урок"),
+      lessonBack(lesson),
       h("span", { class: "count num" }, `${t.index + 1} из ${t.questions.length}`),
     ),
     h("div", { class: "meter" }, h("i", { style: `width: ${(t.answers.length / t.questions.length) * 100}%` })),
@@ -1278,7 +1387,7 @@ function renderTestResults() {
   if (!t.celebrated) { t.celebrated = true; if (passed) confetti(); }
 
   setView(
-    h("div", { class: "nav" }, backLink(`#unit-${lesson.id}`, "Урок")),
+    h("div", { class: "nav" }, lessonBack(lesson)),
     h("section", { class: "card done-card" },
       lessonDone || perfect ? lessonIcon("trophy", "done-mark") : passed ? h("span", { class: "done-mark" }, icon("check")) : lessonIcon("pencil-line", "done-mark soft"),
       h("p", { class: "eyebrow" }, `Тест · урок ${UNIT_NO.get(lesson.id)} · ${lesson.title}`),
@@ -1314,7 +1423,7 @@ function renderTestResults() {
       missed.length
         ? h("button", { class: "btn primary", type: "button", onclick: () => practiseMistakes(lesson, missed) }, icon("repeat"), `Повторить ошибки · ${missed.length}`)
         : null,
-      nextStepButton(lesson, !missed.length),
+      nextStepButton(lesson, !missed.length, "write"),
       h("button", { class: "btn", type: "button", onclick: () => { startTest(lesson); renderTest(lesson); scrollTo(0, 0); } }, icon("pencil-line", "u"), "Пройти тест ещё раз"),
       h("a", { class: "btn", href: `#${trackOf(lesson)}` }, "К курсу"),
     ),
@@ -1492,7 +1601,7 @@ function renderDrill(kind, lesson) {
   }
 
   setView(
-    h("div", { class: "nav" }, backLink(`#unit-${lesson.id}`, "Урок"), h("span", { class: "count num" }, `${d.index + 1} из ${d.items.length}`)),
+    h("div", { class: "nav" }, lessonBack(lesson), h("span", { class: "count num" }, `${d.index + 1} из ${d.items.length}`)),
     h("div", { class: "meter" }, h("i", { style: `width: ${(d.answers.length / d.items.length) * 100}%` })),
     celebrate
       ? h("div", { class: "celebrate", role: "status" }, lessonIcon("trophy", "celebrate-icon"),
@@ -1579,7 +1688,7 @@ function renderDrillResults() {
   if (!d.celebrated) { d.celebrated = true; if (passed) confetti(); }
   const again = () => { startDrill(kind, lesson); renderDrill(kind, lesson); scrollTo(0, 0); };
   setView(
-    h("div", { class: "nav" }, backLink(`#unit-${lesson.id}`, "Урок")),
+    h("div", { class: "nav" }, lessonBack(lesson)),
     h("section", { class: "card done-card" },
       lessonDone ? lessonIcon("trophy", "done-mark") : lessonIcon(info.icon, `done-mark${passed ? "" : " soft"}`),
       h("p", { class: "eyebrow" }, `${info.title} · урок ${UNIT_NO.get(lesson.id)} · ${lesson.title}`),
@@ -1604,9 +1713,9 @@ function renderDrillResults() {
     ),
     lessonTasks(lesson),
     h("div", { class: "btn-stack" },
-      passed ? nextStepButton(lesson) : h("button", { class: "btn primary", type: "button", onclick: again }, icon("repeat"), "Ещё раз"),
+      passed ? nextStepButton(lesson, true, kind) : h("button", { class: "btn primary", type: "button", onclick: again }, icon("repeat"), "Ещё раз"),
       passed ? h("button", { class: "btn", type: "button", onclick: again }, icon("repeat"), "Ещё раз") : null,
-      h("a", { class: "btn", href: `#unit-${lesson.id}` }, "К уроку"),
+      skillFocus ? h("a", { class: "btn", href: `#skill-${kind}` }, `Все уроки: ${info.title}`) : h("a", { class: "btn", href: `#unit-${lesson.id}` }, "К уроку"),
     ),
   );
 }
@@ -1811,13 +1920,15 @@ async function shareCode(code) {
   refreshSyncCard();
 }
 
-// ---------------------------------------------------------------- navigation (#unit-cafe, #practice-cafe, #test-cafe, #listen-cafe…)
+// ---------------------------------------------------------------- navigation (#unit-cafe, #practice-cafe, #test-cafe, #listen-cafe, #skill-speak…)
 function route(_event, keepScroll = false) {
   const top = () => { if (!keepScroll) scrollTo(0, 0); };
   attempt?.cancel();
   stopSound();
   const hash = location.hash.slice(1);
   if (!hash.startsWith("test-")) testRun = null;
+  const skillPage = /^skill-(speak|listen|read|write)$/.exec(hash);
+  if (skillPage) { session = null; drill = null; renderSkill(skillPage[1]); return top(); }
   const skill = /^(listen|read|speak)-(.+)$/.exec(hash);
   if (!skill) drill = null;
   if (skill) {

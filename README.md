@@ -57,11 +57,15 @@ unit with its own icon.
 - **Работа (work), 22 units, C → G:** introducing yourself, colleagues, requests, calls, meetings,
   updates, feedback, emails, presentations, interviews, negotiating, networking, leading a team,
   difficult conversations, pitching, strategy, public speaking and talking to executives.
-- **Five tasks per unit, one per skill**, shown as a checklist (the unit turns green when all are
-  done): *Карточки* (learn every phrase), *Аудирование* (hear a phrase and pick what was said),
-  *Чтение* (read a phrase and pick its meaning), *Говорение* (say it in English: checked by speech
-  recognition in the app, self-checked elsewhere) and *Письмо* (the written test). Each exercise
-  has 8 phrases and is passed with 6.
+- **Cards and four skills per unit**, shown as a checklist (the unit turns green when all five are
+  done): *Карточки* (learn every phrase), then the skills in two pairs: spoken, *Говорение* (say it
+  in English: checked by speech recognition in the app, self-checked elsewhere) and *Аудирование*
+  (hear a phrase and pick what was said); written, *Чтение* (read a phrase and pick its meaning)
+  and *Письмо* (the written test). Each exercise has 8 phrases and is passed with 6.
+- **Lessons by skill:** the course page's "Навыки" card (2×2, spoken and written) opens a page per
+  skill (`#skill-speak`, `#skill-listen`, `#skill-read`, `#skill-write`) listing every lesson of a
+  section with that skill's own tick and score. Working from there, an exercise's back button
+  returns to the skill and "Дальше" goes on to the next lesson's same exercise.
 - Every phrase has the Russian meaning and the English **written in Russian letters** (the same
   spelling as under live subtitles; `test/learn.test.js` keeps them in sync).
 - **Practice cards** in two modes: *Понимать* (English → Russian) and *Говорить* (Russian → English).

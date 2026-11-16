@@ -182,6 +182,7 @@
       border-radius: 10px; color: var(--ink-2); text-decoration: none; font-size: 14px; font-weight: 600; text-align: center; line-height: 1.2;
       transition: background-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
     }
+    button.track { border: 0; background: transparent; }
     .track[aria-current="page"] { background: var(--seg-on); box-shadow: var(--seg-shadow); color: var(--ink); }
     .track-icon { display: grid; place-items: center; color: var(--ink-2); }
     .track-icon svg.i { width: 24px; height: 24px; }
@@ -554,6 +555,26 @@
     .code-input::placeholder { color: var(--ink-3); }
     .code-input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
     .sync-card .btn-row .btn { flex: 1 1 auto; }
+
+    /* ---------- the four skills, in two pairs: spoken and written ---------- */
+    .skills-card { display: flex; flex-direction: column; gap: 10px; }
+    .skills-group { margin: 4px 0 -2px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+    .skill-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .skill-tile {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 12px; border-radius: 16px;
+      background: var(--fill); color: var(--ink); text-decoration: none; transition: opacity 0.25s ease;
+    }
+    .skill-tile:active { opacity: 0.55; transition: none; }
+    .skill-tile.done { background: var(--ok-soft); }
+    .skill-name { display: inline-flex; align-items: center; gap: 6px; font-size: 16px; font-weight: 650; }
+    .skill-name svg.i { width: 17px; height: 17px; color: var(--accent); }
+    .skill-tile.done .skill-name svg.i { color: var(--ok); }
+    .skill-count { font-size: 13px; color: var(--ink-2); }
+    .skill-tile .mini-meter { display: block; width: 100%; height: 4px; margin-top: auto; border-radius: 2px; background: var(--inset); overflow: hidden; }
+    .skill-tile .mini-meter i { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+    .skill-tile.done .mini-meter i { background: var(--ok); }
+    .tasks-card .skills-group { margin-top: 6px; }
+    .tasks-card .skill-grid { margin-bottom: 8px; }
 
     /* ---------- listening, reading, speaking ---------- */
     .choices { display: flex; flex-direction: column; gap: 8px; }
