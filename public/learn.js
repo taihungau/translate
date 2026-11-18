@@ -5,6 +5,7 @@
 import { TRACKS, LEVELS, LESSONS } from "./lessons.js";
 import { mergeProgress, normalizeCode, SYNC_KEYS } from "./learn-sync.js";
 import { compareSpeech, checkWriting, testQuestions, choices, grade, isLearned, isDue, verdict, dayKey, streak, clozeItem, buildWorkout, LEVEL_LETTERS, placementStep } from "./learn-core.js";
+import { avatarSupported, avatarStage, avatarRefresh, avatarSay, avatarHush, avatarReact, avatarListen } from "./avatar.js";
 
 const APP_URL = "https://translate-hyperlinks-projects.vercel.app/";
 const view = document.getElementById("view");
@@ -153,7 +154,10 @@ function icon(name, set = "i") {
   return svg;
 }
 // Replaces the screen's content. Parts left out with null or false are skipped, not shown as text.
-const setView = (...parts) => view.replaceChildren(...parts.flat().filter((part) => part != null && part !== false));
+const setView = (...parts) => {
+  view.replaceChildren(...parts.flat().filter((part) => part != null && part !== false));
+  avatarRefresh(); // the talking face runs only while it is on screen
+};
 const backLink = (href, text) => h("a", { class: "back", href }, icon("back"), text);
 const plural = (n, one, few, many) => {
   const mod10 = n % 10;
@@ -179,6 +183,11 @@ const SPEEDS = [0.5, 1, 1.5, 2];
 let speed = SPEEDS.includes(load("learnSpeed", 1)) ? load("learnSpeed", 1) : 1;
 const speedLabel = (r) => `${String(r).replace(".", ",")}×`; // "0,5×": Russian decimal comma
 const canPlay = () => Boolean(RECORDINGS || serverTts || tts);
+// The talking face (avatar.js): a realistic person who says the phrase with matching lips. It needs
+// audio files (the server's voice or the published recordings) and WebGL 2.
+const CAN_DRAW_FACE = avatarSupported();
+let avatarOn = load("learnAvatar", true);
+const faceOn = () => avatarOn && CAN_DRAW_FACE && Boolean(RECORDINGS || serverTts);
 
 const bundles = new Map(); // lesson id → Promise<{ text: data URL }>
 const downloads = new Map(); // "voice|text" → { promise, url }
@@ -204,14 +213,21 @@ function download(text) {
     return downloads.get(key);
   }
   if (!serverTts) return null;
-  const key = `${voiceChoice}|${text}`;
+  // With the face on, the audio comes with when each word is said, for its lips.
+  const timed = faceOn();
+  const key = `${voiceChoice}|${timed ? "timed|" : ""}${text}`;
   if (!downloads.has(key)) {
     const code = accessCode();
-    const query = new URLSearchParams({ text, voice: voiceChoice, ...(code ? { code } : {}) });
-    const entry = { url: null };
+    const query = new URLSearchParams({ text, voice: voiceChoice, ...(code ? { code } : {}), ...(timed ? { lipsync: "1" } : {}) });
+    const entry = { url: null, words: null };
     entry.promise = fetch(`api/tts?${query}`)
-      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((blob) => (entry.url = URL.createObjectURL(blob)));
+      .then((res) => (res.ok ? (timed ? res.json() : res.blob()) : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((got) => {
+        if (!timed) return (entry.url = URL.createObjectURL(got));
+        entry.words = Array.isArray(got.words) ? got.words : null;
+        const bytes = Uint8Array.from(atob(got.audio), (c) => c.charCodeAt(0));
+        return (entry.url = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" })));
+      });
     entry.promise.catch(() => downloads.delete(key));
     downloads.set(key, entry);
   }
@@ -258,11 +274,15 @@ async function speak(text, rate = speed, button = null) {
   markPlaying(button);
   const entry = download(text);
   try {
-    if (entry?.url) return await playFile(entry.url, rate); // downloaded already: plays within the tap
+    if (entry?.url) { // downloaded already: plays within the tap
+      await playFile(entry.url, rate);
+      return faceSays(text, entry);
+    }
     if (entry) {
       player.src = SILENCE;
       player.play().catch(() => {});
-      return await playFile(await entry.promise, rate);
+      await playFile(await entry.promise, rate);
+      return faceSays(text, entry);
     }
   } catch { /* fall back to the device's voice */ }
   speakWithDevice(text, rate, button);
@@ -294,6 +314,28 @@ function speakWithDevice(text, rate, button) {
 function stopSound() {
   tts?.cancel();
   player.pause();
+  avatarHush();
+}
+
+/** The face, when it is on screen, moves its lips with the player. */
+function faceSays(text, entry) {
+  if (faceOn()) avatarSay(text, player, entry.words);
+}
+
+/** The talking face, for a screen where phrases are heard or said; × hides it everywhere. */
+function faceCard() {
+  if (!faceOn()) return null;
+  return h("div", { class: "avatar-card" },
+    avatarStage(voiceChoice),
+    h("button", {
+      class: "avatar-close", type: "button", "aria-label": "Скрыть лицо",
+      onclick: (e) => {
+        avatarOn = false;
+        save("learnAvatar", false);
+        e.currentTarget.closest(".avatar-card")?.remove();
+        avatarRefresh();
+      },
+    }, icon("x", "u")));
 }
 
 function playButton(text, label = "Слушать") {
@@ -363,7 +405,9 @@ async function detectApp() {
   if (testRun && testRun.index < testRun.questions.length) return showFoot();
   if (drill) { if (!attempt) renderSession(); return showFoot(); } // speaking can now be checked
   if (!session) route();
-  else {
+  else if (faceOn() && !attempt && session.index < session.queue.length && !document.querySelector(".avatar-card")) {
+    renderPractice(session.deck); // the talking face can show now
+  } else {
     for (const el of document.querySelectorAll("[data-needs-app]")) el.hidden = false;
     const p = session.queue[session.index];
     prefetch(p?.en);
@@ -488,6 +532,15 @@ function todayCard() {
       canPlay()
         ? h("div", { class: "option" }, h("span", { class: "option-label" }, "Скорость"),
             speedChips(() => speak("This is how fast I'll read the phrases.")))
+        : null,
+      CAN_DRAW_FACE && (serverTts || RECORDINGS)
+        ? h("div", { class: "option" }, h("span", { class: "option-label", id: "faceLabel" }, "Говорящее лицо"),
+            h("div", { class: "chips", role: "radiogroup", "aria-labelledby": "faceLabel" },
+              [[true, "Вкл"], [false, "Выкл"]].map(([on, label]) => chip(label, avatarOn === on, () => {
+                avatarOn = on;
+                save("learnAvatar", on);
+                renderCourse(currentTrack);
+              }))))
         : null,
       h("div", { class: "option" }, h("span", { class: "option-label", id: "themeLabel" }, "Тема"),
         h("div", { class: "chips theme-choice", role: "radiogroup", "aria-labelledby": "themeLabel" },
@@ -1189,6 +1242,7 @@ function renderPractice(deck) {
       h("button", { class: "chip", type: "button", role: "radio", "aria-checked": String(understand), onclick: () => setMode("understand") }, "Понимать"),
       h("button", { class: "chip", type: "button", role: "radio", "aria-checked": String(!understand), onclick: () => setMode("speak") }, "Говорить"),
     ),
+    faceCard(),
     celebrate
       ? h("div", { class: "celebrate", role: "status" }, lessonIcon("trophy", "celebrate-icon"),
           h("span", {}, h("b", {}, "Цель на сегодня выполнена!"), ` ${streakText(streak(stats.days))}. Можно продолжать.`))
@@ -1239,6 +1293,7 @@ async function checkSpeech(phrase) {
   if (attempt) return attempt.finish(); // second tap: done speaking
   s.feedback = { state: "listening", heard: "" };
   renderPractice(s.deck);
+  avatarListen();
   const btn = document.getElementById("sayBtn");
   btn.replaceChildren(icon("stop"), "Готово");
   btn.classList.add("rec");
@@ -1256,6 +1311,7 @@ async function checkSpeech(phrase) {
     s.feedback = { state: "error", message: denied ? "Разрешите доступ к микрофону в настройках браузера и попробуйте снова." : err.message };
   }
   renderPractice(s.deck);
+  if (s.feedback?.state === "result") avatarReact(s.feedback.result.score >= 0.8);
 }
 
 function gradeCard(knew) {
@@ -1713,6 +1769,7 @@ function answerItem(ok, extra = {}) {
   }
   if (countCard()) { d.celebrate = true; confetti(); }
   renderSession();
+  if (item.format !== "intro") avatarReact(ok); // the face smiles and nods, or looks kind
 }
 
 // "My answer is right too" (translation only): another correct way to say it.
@@ -1792,6 +1849,7 @@ async function sessionSpeak() {
   const q = d.items[index].phrase;
   d.ui.feedback = { state: "listening", heard: "" };
   renderSession();
+  avatarListen();
   const btn = document.getElementById("drillSay");
   btn?.replaceChildren(icon("stop"), "Готово");
   btn?.classList.add("rec");
@@ -1807,6 +1865,7 @@ async function sessionSpeak() {
     if (!d.answers[index]) return answerItem(ok, { score: result.score });
     if (ok && !d.answers[index].ok) { // a better try counts
       d.answers[index].ok = true;
+      queueMicrotask(() => avatarReact(true));
       if (d.type === "workout") { progress[q.en] = grade(d.answers[index].before, true); save("learnProgress", progress); }
     }
   } catch (err) {
@@ -1921,6 +1980,7 @@ function renderSession() {
   setView(
     h("div", { class: "nav" }, head.back, h("span", { class: "count num" }, head.count)),
     d.type === "placement" ? null : h("div", { class: "meter" }, h("i", { style: `width: ${(d.index / d.items.length) * 100}%` })),
+    d.type !== "placement" && ["speak", "intro", "pick-heard", "dictation"].includes(item.format) ? faceCard() : null,
     celebrate
       ? h("div", { class: "celebrate", role: "status" }, lessonIcon("trophy", "celebrate-icon"),
           h("span", {}, h("b", {}, "Цель на сегодня выполнена!"), ` ${streakText(streak(stats.days))}.`))

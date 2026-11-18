@@ -4,7 +4,7 @@ import { dictionary } from "cmu-pronouncing-dictionary"; // the same version pro
 import { enToCyrillic } from "../public/pronounce.js";
 import { readFileSync } from "node:fs";
 import { TRACKS, LEVELS, LESSONS } from "../public/lessons.js";
-import { compareSpeech, checkWriting, oneLetterOff, testQuestions, choices, tokens, grade, isLearned, isDue, INTERVALS, dayKey, streak, clozeItem, buildWorkout, LEVEL_LETTERS, placementStep } from "../public/learn-core.js";
+import { compareSpeech, checkWriting, oneLetterOff, testQuestions, choices, tokens, grade, isLearned, isDue, INTERVALS, dayKey, streak, clozeItem, buildWorkout, LEVEL_LETTERS, placementStep, spreadWords } from "../public/learn-core.js";
 
 const marks = (r) => r.words.map((w) => (w.ok ? w.word : `[${w.word}]`)).join(" ");
 
@@ -233,4 +233,14 @@ test("cosmetology is a special section: every lesson has the four skills' phrase
   const lessons = LESSONS.filter((l) => LEVELS.find((v) => v.id === l.level).track === "beauty");
   assert.ok(lessons.length >= 10);
   for (const lesson of lessons) assert.ok(lesson.phrases.length >= 8, `${lesson.id}: enough phrases for an 8-question exercise`);
+});
+
+test("without timings, the talking face spreads the words over the voiced part of the clip", () => {
+  const words = spreadWords("Hi, I'm Anna.", [0.1, 1.1]);
+  assert.deepEqual(words.map((w) => w.w), ["Hi", "I'm", "Anna"]);
+  assert.equal(words[0].s, 0.1);
+  assert.ok(Math.abs(words.at(-1).e - 1.1) < 1e-9, "ends where the voice ends");
+  assert.ok(words[1].s - words[0].e > 0.1, "a pause at the comma");
+  assert.ok(words[2].e - words[2].s > words[0].e - words[0].s, "longer words take longer");
+  assert.deepEqual(spreadWords("", [0, 1]), []);
 });

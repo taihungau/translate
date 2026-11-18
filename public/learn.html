@@ -13,6 +13,14 @@
   <script>document.documentElement.dataset.autoTheme = document.documentElement.dataset.theme || "";
   try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
   try { if (localStorage.getItem("learnBackdrop") !== '"none"') document.documentElement.classList.add("has-backdrop"); } catch { document.documentElement.classList.add("has-backdrop"); }</script>
+  <!-- The talking face (avatar.js): TalkingHead and three.js, fetched only when the face is first shown. -->
+  <script type="importmap">
+  { "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+    "talkinghead": "https://cdn.jsdelivr.net/npm/@met4citizen/talkinghead@1.8.2/modules/talkinghead.mjs"
+  } }
+  </script>
   <style>
     /* Layout: one reading column (max 640px). Course: progress summary, then the three levels with
        their units in order. Unit: goal, grammar note and phrase list. Practice: one card at a time.
@@ -56,6 +64,7 @@
       --glass-blur: blur(26px) saturate(180%);
       --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       --radius: 14px;
+      --face-bg: radial-gradient(120% 95% at 50% 28%, #f6f7fa 0%, #e2e7ee 55%, #c7d0dc 100%); /* a soft studio wall */
       color-scheme: light;
     }
     @media (prefers-color-scheme: dark) {
@@ -70,6 +79,7 @@
         --danger: #ff453a; --almost-soft: rgba(255, 159, 10, 0.18);
         --glass: rgba(28, 28, 30, 0.72); --glass-edge: rgba(255, 255, 255, 0.13); --glass-shine: rgba(255, 255, 255, 0.14);
         --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+        --face-bg: radial-gradient(120% 95% at 50% 28%, #46464b 0%, #2a2a2e 55%, #19191b 100%);
       }
     }
     :root[data-theme="dark"] {
@@ -83,6 +93,7 @@
       --danger: #ff453a; --almost-soft: rgba(255, 159, 10, 0.18);
       --glass: rgba(28, 28, 30, 0.72); --glass-edge: rgba(255, 255, 255, 0.13); --glass-shine: rgba(255, 255, 255, 0.14);
       --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+      --face-bg: radial-gradient(120% 95% at 50% 28%, #46464b 0%, #2a2a2e 55%, #19191b 100%);
     }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -617,6 +628,25 @@
     .cloze .gap.bad { border-color: var(--miss); color: var(--miss); }
     .ru-hint { margin: 0; font-size: 17px; color: var(--ink-2); }
     .flash.intro .flash-head { color: var(--accent); }
+
+    /* The talking face: a realistic person on a soft studio wall, above speaking and listening */
+    .avatar-card { position: relative; border-radius: var(--radius); overflow: hidden; background: var(--face-bg); box-shadow: var(--shadow); }
+    .has-backdrop .avatar-card { box-shadow: var(--glass-shadow); border: 1px solid var(--glass-edge); }
+    .avatar-stage { position: relative; height: clamp(210px, 58vw, 300px); }
+    .avatar-view { position: absolute; inset: 0; }
+    .avatar-view canvas { display: block; }
+    .avatar-note {
+      position: absolute; inset: auto 0 14px; text-align: center; font-size: 14px; font-weight: 500; color: var(--ink-2);
+      animation: note-pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes note-pulse { 50% { opacity: 0.5; } }
+    .avatar-close {
+      position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; border: 0; border-radius: 50%;
+      display: grid; place-items: center; background: rgba(0, 0, 0, 0.18); color: #fff;
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    }
+    .avatar-close svg.i { width: 16px; height: 16px; stroke-width: 2.4; }
+    .avatar-close:active { opacity: 0.55; }
 
     /* My level: the levels a section has, A–G, as a segmented switch */
     .level-card { display: flex; flex-direction: column; gap: 12px; }

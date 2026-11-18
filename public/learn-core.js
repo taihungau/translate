@@ -297,3 +297,23 @@ export function placementStep(results, i, passed) {
   if (i === 0 || r[LEVEL_LETTERS[i - 1]] === true) return { results: r, level: LEVEL_LETTERS[i] };
   return { results: r, next: i - 1 };
 }
+
+/**
+ * Word timings guessed from where the voice is in a clip: words spread over [start, end] seconds
+ * by length, with a short pause at a comma (for the talking face when no timings came with the
+ * audio).
+ * @returns {{w: string, s: number, e: number}[]}
+ */
+export function spreadWords(text, [start, end]) {
+  const parts = String(text).match(/[\p{L}\p{N}'’]+|[,;:—–]/gu) ?? [];
+  const weight = (p) => (/^[,;:—–]$/.test(p) ? 3 : p.replace(/['’]/g, "").length + 1.5);
+  const total = parts.reduce((sum, p) => sum + weight(p), 0) || 1;
+  const words = [];
+  let t = start;
+  for (const p of parts) {
+    const d = ((end - start) * weight(p)) / total;
+    if (!/^[,;:—–]$/.test(p)) words.push({ w: p, s: t, e: t + d });
+    t += d;
+  }
+  return words;
+}

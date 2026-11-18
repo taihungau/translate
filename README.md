@@ -99,9 +99,31 @@ Built to learn fast, not just to browse:
 - **Read aloud in American English:** every phrase and word plays at normal or slow speed with
   Deepgram's Aura-2 voices (Thalia, or Orion for a male voice), through `GET /api/tts`, at
   0,5×, 1×, 1,5× or 2× speed (one remembered setting for every play button). It is real
-  audio, so it plays even when an iPhone is on silent. The same line always gives the same MP3, so
-  Vercel's CDN keeps it a year and each line is generated once. Without `DEEPGRAM_API_KEY` the
+  audio, so it plays even when an iPhone is on silent. Vercel's CDN keeps each line's MP3 for a
+  year, so a line is generated once rather than on every play. Without `DEEPGRAM_API_KEY` the
   page falls back to the phone's own US English voice.
+- **A talking face (Говорящее лицо):** a realistic person above the speaking, listening and new-phrase
+  exercises and the practice cards says each phrase with matching lips, so she can see how it is
+  pronounced: lips closed for *m/p/b*, the tongue between the teeth for *th*, rounded for *oo*.
+  The mouth is a little clearer than in normal speech, as a teacher would mouth it. The woman goes
+  with the female voice, the man with the male one. She looks at the learner while speaking and
+  while listening, and smiles and nods at a right answer. The × on the face, or "Говорящее лицо:
+  Выкл" on the course page, hides it.
+  - How: [TalkingHead](https://github.com/met4citizen/TalkingHead) 1.8.2 on three.js 0.186 (both
+    MIT), loaded from jsDelivr through the import map in `learn.html` only when the face is first
+    shown (`public/avatar.js`). The sound still plays through the page's own audio player (silent
+    mode, every speed); each frame the lips follow that player's position, so they stay in sync at
+    0,5× or 2×.
+  - Lip timing: Deepgram's voice gives no word timings and never says a line twice exactly the
+    same way, so with the face on, the page asks for `GET /api/tts?text=…&voice=…&lipsync=1`. The
+    server makes the audio, runs that same clip through Nova-3 to time each word, and returns
+    `{ audio: base64 MP3, words: [{ w, s, e }] }` (cached a year like the MP3). Without timings (the
+    published copy, or if timing fails) words are spread over the loud part of the clip.
+  - Models: `public/avatars/woman.glb` and `man.glb`, TalkingHead's example avatars made with
+    Avaturn and Avatar SDK, **free for non-commercial use only** (see `public/avatars/LICENSE.txt`).
+    They were compressed for phones from 13.8 and 12.3 MB to 5.9 and 5.3 MB (meshopt, 16-bit
+    blendshape deltas; vertex positions and normals left as they were, since quantizing those
+    broke TalkingHead's posing and shading). Only the face for the chosen voice is downloaded.
 - **A checklist for every lesson:** two tasks, *learn the phrases* (each one "Знаю" at least once)
   and *pass the test* (6 of 8 or better). The course list shows each lesson's progress as a ring
   that fills up and turns into a green tick when both are done, with ✓ chips for the two tasks;
@@ -274,6 +296,10 @@ returns
 
 `direction` is `"en-ru"` (the default) or `"ru-en"`. Each request accepts up to 60 lines. Lines the model fails to return are left out of the
 response, and the client retries them.
+
+`GET /api/tts?text=…&voice=female|male` returns the line read aloud as an MP3; with `&lipsync=1`
+it returns `{ "audio": "<base64 MP3>", "words": [{ "w": "tell", "s": 0.08, "e": 0.3 }] }` (word
+start and end in seconds) for the talking face.
 
 ## Development
 

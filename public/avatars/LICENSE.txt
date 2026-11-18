@@ -1,0 +1,17 @@
+The talking faces on the course (woman.glb, man.glb)
+
+Both are example avatars from the TalkingHead project by Mika Suominen
+(https://github.com/met4citizen/TalkingHead), compressed for phones (geometry only: meshopt and
+16-bit blendshape deltas; nothing else changed).
+
+- woman.glb: TalkingHead's "avaturn.glb", created at Avaturn (https://avaturn.me) for
+  non-commercial use.
+- man.glb: TalkingHead's "avatarsdk.glb", created with Avatar SDK / MetaPerson
+  (https://avatarsdk.com) for non-commercial use.
+
+They are used here only in this personal, non-commercial English course. For any commercial use,
+replace them with avatars you have the rights to (TalkingHead's README, Appendix A, lists ways to
+make one, including the CC0 MPFB / MakeHuman route).
+
+The face is animated with TalkingHead (MIT License, Copyright (c) 2023-2024 Mika Suominen) and three.js
+(MIT License, Copyright © 2010-2026 three.js authors), loaded from cdn.jsdelivr.net.

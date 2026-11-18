@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleTts, speechConfig, TTS_VOICES } from "../lib/handler.js";
+import { handleTts, handleLipsync, speechConfig, TTS_VOICES } from "../lib/handler.js";
 
 function withEnv(vars, fn) {
   const saved = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
@@ -57,3 +57,43 @@ test("passes on Deepgram's reason when it refuses", () =>
       assert.equal(res.status, 502);
       assert.match(res.body.error, /403.*Insufficient permissions/);
     })));
+
+test("times each word of the very clip it returns, for the talking face", () =>
+  withEnv({ DEEPGRAM_API_KEY: "k", ACCESS_CODE: undefined }, async () => {
+    const realFetch = globalThis.fetch;
+    const calls = [];
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url, init });
+      if (String(url).includes("/v1/speak")) return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      return new Response(JSON.stringify({ results: { channels: [{ alternatives: [{ words: [
+        { word: "tell", start: 0.0812, end: 0.3, confidence: 0.99 },
+        { word: "me", start: 0.3, end: 0.42 },
+        { word: "broken" },
+      ] }] }] } }), { status: 200 });
+    };
+    try {
+      const res = await handleLipsync("Tell me.", "female");
+      assert.equal(res.status, 200);
+      assert.equal(res.body.audio, Buffer.from([1, 2, 3]).toString("base64"));
+      assert.deepEqual(res.body.words, [{ w: "tell", s: 0.081, e: 0.3 }, { w: "me", s: 0.3, e: 0.42 }]);
+      assert.match(calls[1].url, /\/v1\/listen\?model=nova-3/);
+      assert.deepEqual([...calls[1].init.body], [1, 2, 3], "the same audio is timed");
+      assert.equal(calls[1].init.headers["Content-Type"], "audio/mpeg");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }));
+
+test("still returns the audio when timing fails, and refuses what the voice refuses", () =>
+  withEnv({ DEEPGRAM_API_KEY: "k", ACCESS_CODE: undefined }, async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => (String(url).includes("/v1/speak") ? new Response(new Uint8Array([9]), { status: 200 }) : new Response("{}", { status: 500 }));
+    try {
+      const res = await handleLipsync("Hello");
+      assert.equal(res.status, 200);
+      assert.deepEqual(res.body.words, []);
+      assert.equal((await handleLipsync("", "female")).status, 400);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }));
