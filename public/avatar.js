@@ -18,17 +18,39 @@ const FACES = {
       Hips: { y: 0.03 }, Spine: { y: 0.02 }, Spine1: { y: 0.02, z: 0.01 }, Spine2: { y: 0.02, z: 0.01 },
       Neck: { z: 0.02, y: 0.01 }, Head: { z: 0.02 }, LeftShoulder: { rx: -0.5 }, RightShoulder: { rx: -0.5 }, scaleToHipsLevel: 1.0,
     },
-    baseline: { headRotateX: -0.05, eyeBlinkLeft: 0.15, eyeBlinkRight: 0.15 },
+    // At rest: a soft closed-mouth smile, relaxed lids and lifted brows: warm and attractive.
+    baseline: {
+      headRotateX: -0.05, eyeBlinkLeft: 0.12, eyeBlinkRight: 0.12,
+      mouthSmileLeft: 0.22, mouthSmileRight: 0.22, cheekSquintLeft: 0.12, cheekSquintRight: 0.12, browInnerUp: 0.08,
+    },
   },
   male: {
-    url: "avatars/man.glb", body: "M", avatarMood: "neutral",
+    url: "avatars/man.glb", body: "M", avatarMood: "neutral", exposure: 0.85, // his skin is paler
     camera: { cameraDistance: -0.48, cameraY: -0.16 },
     retarget: {
       Neck: { z: -0.01, rx: -0.15 }, Neck1: { z: -0.01, rx: -0.15 }, Neck2: { z: -0.01, rx: -0.15 },
       LeftShoulder: { rz: -0.3 }, RightShoulder: { rz: 0.3 }, scaleToEyesLevel: 1.0, origin: { y: -0.1 },
     },
-    baseline: { headRotateX: -0.04, eyeBlinkLeft: 0.05, eyeBlinkRight: 0.05 },
+    baseline: { headRotateX: -0.04, eyeBlinkLeft: 0.05, eyeBlinkRight: 0.05, mouthSmileLeft: 0.12, mouthSmileRight: 0.12 },
   },
+};
+
+// The look: studio portrait lighting (a warm key light in front and a little above, a soft fill
+// from the other side, a warm rim light behind that makes the hair glow), skin with a soft glow
+// instead of plastic shine, glossy eyes that catch the light, and shiny hair with soft edges.
+const FACE_LOOK = {
+  light: { // the key from 43° to the side and 30° up sculpts the cheeks; the rim is behind, above
+    lightAmbientColor: 0xfff1ea, lightAmbientIntensity: 0.3,
+    lightDirectColor: 0xfff4ec, lightDirectIntensity: 6, lightDirectPhi: 1.05, lightDirectTheta: 0.75,
+    lightSpotColor: 0xffd9c4, lightSpotIntensity: 35, lightSpotPhi: 0.75, lightSpotTheta: Math.PI, lightSpotDispersion: 0.6,
+  },
+  fill: { color: 0xeef2ff, intensity: 0.7, position: [-1.6, 0.3, 2.2] },
+  exposure: 0.95,
+  skin: { normalScale: 0.55, sheen: 0.35, sheenRoughness: 0.55, sheenColor: 0xffb59e, specularIntensity: 0.55 },
+  eyes: { roughness: 0.04, clearcoat: 1, envMapIntensity: 1.6 },
+  // Rich dark chestnut hair (the model's own is a pale pink), without glare off the strand edges.
+  hair: { roughness: 0.62, metalness: 0, specularIntensity: 0.4, envMapIntensity: 0.35, sheen: 0, sheenRoughness: 0.4, sheenColor: 0xffe3d0, tint: [0.42, 0.3, 0.26] },
+  lashes: { darken: 0.55 },
 };
 const FACE_VISEMES = ["sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"];
 // Lips a bit clearer than in normal speech, as a teacher would mouth them, with the jaw opening
@@ -106,7 +128,7 @@ function createFace() {
     faceHead = new TalkingHead(faceView, {
       lipsyncModules: ["en"], lipsyncLang: "en",
       cameraView: "head", cameraRotateEnable: false, cameraPanEnable: false, cameraZoomEnable: false,
-      modelFPS: 30, modelPixelRatio: Math.min(2, window.devicePixelRatio || 1), modelMovementFactor: 0.4,
+      modelFPS: 30, modelPixelRatio: 1, modelMovementFactor: 0.4, // TalkingHead multiplies this by the screen's own ratio
       avatarIdleEyeContact: 0.7, avatarIdleHeadMove: 0.2, avatarSpeakingEyeContact: 0.9, avatarSpeakingHeadMove: 0.2,
       update: driveFace,
     });
@@ -129,17 +151,73 @@ async function faceModelUrl(who) {
   return URL.createObjectURL(new Blob([bytes], { type: "model/gltf-binary" }));
 }
 
+let faceFill = null; // the fill light, added once
+async function dressFace(look = FACE_LOOK) {
+  const THREE = await import("three"); // the same three.js TalkingHead uses (one import map entry)
+  const h = faceHead;
+  h.setLighting(look.light);
+  if (!faceFill) {
+    faceFill = new THREE.DirectionalLight();
+    h.scene.add(faceFill);
+  }
+  faceFill.color.set(look.fill.color);
+  faceFill.intensity = look.fill.intensity;
+  faceFill.position.set(...look.fill.position);
+  h.renderer.toneMappingExposure = look.exposure;
+  h.armature.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material = Array.isArray(o.material) ? o.material.map((m) => restyle(THREE, m, look)) : restyle(THREE, o.material, look);
+  });
+}
+
+/** A material in the look: skin, eyes, hair and lashes get their own treatment; the rest stays. */
+function restyle(THREE, m, look) {
+  const name = (m.userData.lookOf ?? m.name ?? "").toLowerCase();
+  const kind = /hair/.test(name) ? "hair" : /lash/.test(name) ? "lashes" : /eyeao/.test(name) ? null
+    : /eye/.test(name) ? "eyes" : /head|body|skin/.test(name) ? "skin" : null;
+  if (!kind) return m;
+  let p = m;
+  if (!m.isMeshPhysicalMaterial) { // the original is a standard material: copy it into a physical one once
+    p = new THREE.MeshPhysicalMaterial();
+    THREE.MeshStandardMaterial.prototype.copy.call(p, m);
+    p.userData = { ...m.userData, lookOf: m.name };
+    m.dispose();
+  }
+  p.userData.baseColor ??= p.color.clone(); // the model's own colour, before any look
+  if (kind === "skin") {
+    const s = look.skin;
+    p.normalScale.set(s.normalScale, s.normalScale); // softer pores and blotches, as retouched
+    p.sheen = s.sheen; p.sheenRoughness = s.sheenRoughness; p.sheenColor.set(s.sheenColor); // a warm glow at the edges, like light under the skin
+    p.specularIntensity = s.specularIntensity; // less oily shine
+  } else if (kind === "eyes") {
+    const e = look.eyes;
+    p.roughness = e.roughness; p.clearcoat = e.clearcoat; p.clearcoatRoughness = 0.02; p.envMapIntensity = e.envMapIntensity; // catchlights
+  } else if (kind === "hair") {
+    const s = look.hair;
+    p.roughness = s.roughness; p.metalness = s.metalness;
+    p.specularIntensity = s.specularIntensity; p.envMapIntensity = s.envMapIntensity; // no glare off the strands
+    p.color.setRGB(...s.tint); // the hair colour, over the texture's
+    p.sheen = s.sheen; p.sheenRoughness = s.sheenRoughness; p.sheenColor.set(s.sheenColor);
+    if (p.alphaTest > 0) p.alphaToCoverage = true; // soft strand edges with the renderer's antialiasing
+  } else if (kind === "lashes") {
+    p.color.copy(p.userData.baseColor).multiplyScalar(look.lashes.darken); // mascara
+  }
+  p.needsUpdate = true;
+  return p;
+}
+
 async function loadFace() {
   const who = faceWanted;
   faceLoading = who;
   setFaceNote("Загружаю лицо…");
   try {
-    const { camera, ...face } = FACES[who];
+    const { camera, exposure = 1, ...face } = FACES[who];
     Object.assign(faceHead.opt, camera);
     const url = await faceModelUrl(who);
     await faceHead.showAvatar({ ...face, url, lipsyncLang: "en" }, (ev) => {
       if (ev?.lengthComputable && ev.total) setFaceNote(`Загружаю лицо… ${Math.round((ev.loaded / ev.total) * 100)}%`);
     });
+    await dressFace({ ...FACE_LOOK, exposure: FACE_LOOK.exposure * exposure });
     faceShown = who;
     faceHead.setView("head", camera);
     setFaceNote(null);

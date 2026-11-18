@@ -1,8 +1,12 @@
 The talking faces on the course (woman.glb, man.glb)
 
 Both are example avatars from the TalkingHead project by Mika Suominen
-(https://github.com/met4citizen/TalkingHead), compressed for phones (geometry only: meshopt and
-16-bit blendshape deltas; nothing else changed).
+(https://github.com/met4citizen/TalkingHead), compressed for phones (meshopt and 16-bit blendshape
+deltas). woman.glb is also retouched: her jaw and lower cheeks are up to 12% narrower and her chin
+6 mm longer (head mesh only, smooth falloffs, blendshapes kept), and her face texture is redone at
+2048 px with smoothed skin, a warmer tone, contour and highlight, blush, eyeliner and eyeshadow,
+defined brows and rose lips, glossy lips in the roughness map, fuller lashes, and the same warm
+tone on the body's skin.
 
 - woman.glb: TalkingHead's "avaturn.glb", created at Avaturn (https://avaturn.me) for
   non-commercial use.

@@ -121,9 +121,15 @@ Built to learn fast, not just to browse:
     published copy, or if timing fails) words are spread over the loud part of the clip.
   - Models: `public/avatars/woman.glb` and `man.glb`, TalkingHead's example avatars made with
     Avaturn and Avatar SDK, **free for non-commercial use only** (see `public/avatars/LICENSE.txt`).
-    They were compressed for phones from 13.8 and 12.3 MB to 5.9 and 5.3 MB (meshopt, 16-bit
+    They were compressed for phones from 13.8 and 12.3 MB to 6.4 and 5.3 MB (meshopt, 16-bit
     blendshape deltas; vertex positions and normals left as they were, since quantizing those
     broke TalkingHead's posing and shading). Only the face for the chosen voice is downloaded.
+  - The look: the woman is retouched in the model itself: a softer oval face (jaw up to 12%
+    narrower, chin 6 mm longer) and makeup painted into a 2048 px face texture (smoothed, warmer
+    skin, contour, highlight, blush, winged eyeliner, eyeshadow, rose lips with gloss, fuller
+    lashes). At run time `avatar.js` adds portrait lighting (a warm key light to the side, a soft
+    fill, a warm rim light behind), skin with a soft glow instead of shine, glossy eyes with
+    catchlights, dark chestnut hair without glare, and a soft resting smile.
 - **A checklist for every lesson:** two tasks, *learn the phrases* (each one "Знаю" at least once)
   and *pass the test* (6 of 8 or better). The course list shows each lesson's progress as a ring
   that fills up and turns into a green tick when both are done, with ✓ chips for the two tasks;
