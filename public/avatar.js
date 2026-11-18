@@ -115,6 +115,20 @@ function createFace() {
   return faceCreating;
 }
 
+// A published copy (claude.ai) can't serve .glb files: there each model comes as base64 in a .json
+// file in LEARN_FACE_DIR (e.g. "avatars/woman.json"), turned back into a model here.
+const FACE_DIR = globalThis.LEARN_FACE_DIR ?? null;
+async function faceModelUrl(who) {
+  if (!FACE_DIR) return FACES[who].url;
+  const name = FACES[who].url.split("/").pop().replace(/\.glb$/, "");
+  const res = await fetch(`${FACE_DIR}${name}.json`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const bin = atob((await res.json()).glb);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes], { type: "model/gltf-binary" }));
+}
+
 async function loadFace() {
   const who = faceWanted;
   faceLoading = who;
@@ -122,7 +136,8 @@ async function loadFace() {
   try {
     const { camera, ...face } = FACES[who];
     Object.assign(faceHead.opt, camera);
-    await faceHead.showAvatar({ ...face, lipsyncLang: "en" }, (ev) => {
+    const url = await faceModelUrl(who);
+    await faceHead.showAvatar({ ...face, url, lipsyncLang: "en" }, (ev) => {
       if (ev?.lengthComputable && ev.total) setFaceNote(`Загружаю лицо… ${Math.round((ev.loaded / ev.total) * 100)}%`);
     });
     faceShown = who;
