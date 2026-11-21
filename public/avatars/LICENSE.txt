@@ -1,21 +1,26 @@
 The talking faces on the course (woman.glb, man.glb)
 
-Both are example avatars from the TalkingHead project by Mika Suominen
-(https://github.com/met4citizen/TalkingHead), compressed for phones (meshopt and 16-bit blendshape
-deltas). woman.glb is also retouched: her jaw and lower cheeks are up to 12% narrower and her chin
-6 mm longer (head mesh only, smooth falloffs, blendshapes kept), and her face texture is redone at
-2048 px with smoothed skin, a warmer tone, contour and highlight, blush, eyeliner and eyeshadow,
-defined brows and rose lips, glossy lips in the roughness map, fuller lashes, and the same warm
-tone on the body's skin.
+Both heads are the "Head 2.0" sample busts that itSeez3D publishes on https://avatarsdk.com/avatars/
+to show what Avatar SDK makes from one photo. They are samples of a commercial product: no open
+licence comes with them. The woman's long hair is the hair of the "avaturn.glb" example avatar of
+the TalkingHead project (https://github.com/met4citizen/TalkingHead), created at Avaturn
+(https://avaturn.me) for non-commercial use.
 
-- woman.glb: TalkingHead's "avaturn.glb", created at Avaturn (https://avaturn.me) for
-  non-commercial use.
-- man.glb: TalkingHead's "avatarsdk.glb", created with Avatar SDK / MetaPerson
-  (https://avatarsdk.com) for non-commercial use.
+They are used here only in this personal, non-commercial English course. For any other use,
+replace them with avatars you have the rights to: Avatar SDK and Avaturn both make one from a
+photo, and TalkingHead's README (Appendix A) lists free ways, including the CC0 MPFB / MakeHuman
+route. The engine (public/avatar.js) needs a head with ARKit face shapes, the 14 Oculus visemes
+(viseme_aa …) and the bones chest, neck, head, eyeLeft and eyeRight.
 
-They are used here only in this personal, non-commercial English course. For any commercial use,
-replace them with avatars you have the rights to (TalkingHead's README, Appendix A, lists ways to
-make one, including the CC0 MPFB / MakeHuman route).
+What was changed, for phones (2.3 and 1.7 MB instead of 27 MB each):
+- smooth normals added (the samples have none); skin, eyes, teeth and the inside of the mouth
+  split into parts so that each can be shaded in its own way;
+- the 25 face shapes the course never uses removed, the rest stored as 16-bit numbers; everything
+  compressed with meshopt;
+- woman.glb: the hair set on the head (moved so that the two models' eyes meet, bound to the
+  bust's bones, its texture saved as WebP with the strands' colour spread under their edges); the
+  head's own painted hair is pushed in by up to 7 mm and darkened under it.
 
-The face is animated with TalkingHead (MIT License, Copyright (c) 2023-2024 Mika Suominen) and three.js
-(MIT License, Copyright © 2010-2026 three.js authors), loaded from cdn.jsdelivr.net.
+The lips are timed with TalkingHead's English lip-sync module (MIT License, Copyright (c) 2023-2024
+Mika Suominen) and everything is drawn with three.js (MIT License, Copyright © 2010-2026 three.js
+authors), both loaded from cdn.jsdelivr.net.

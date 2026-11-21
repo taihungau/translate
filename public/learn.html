@@ -13,12 +13,12 @@
   <script>document.documentElement.dataset.autoTheme = document.documentElement.dataset.theme || "";
   try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
   try { if (localStorage.getItem("learnBackdrop") !== '"none"') document.documentElement.classList.add("has-backdrop"); } catch { document.documentElement.classList.add("has-backdrop"); }</script>
-  <!-- The talking face (avatar.js): TalkingHead and three.js, fetched only when the face is first shown. -->
+  <!-- The talking face (avatar.js): three.js and an English lip-sync module, fetched only when the face is first shown. -->
   <script type="importmap">
   { "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
-    "talkinghead": "https://cdn.jsdelivr.net/npm/@met4citizen/talkinghead@1.8.2/modules/talkinghead.mjs"
+    "lipsync-en": "https://cdn.jsdelivr.net/npm/@met4citizen/talkinghead@1.8.2/modules/lipsync-en.mjs"
   } }
   </script>
   <style>
@@ -633,7 +633,8 @@
     .avatar-card { position: relative; border-radius: var(--radius); overflow: hidden; background: var(--face-bg); box-shadow: var(--shadow); }
     .has-backdrop .avatar-card { box-shadow: var(--glass-shadow); border: 1px solid var(--glass-edge); }
     .avatar-stage { position: relative; height: clamp(210px, 58vw, 300px); }
-    .avatar-view { position: absolute; inset: 0; }
+    .avatar-view { position: absolute; inset: 0; opacity: 0; transition: opacity 0.45s ease; }
+    .avatar-stage.ready .avatar-view { opacity: 1; }
     .avatar-view canvas { display: block; }
     .avatar-note {
       position: absolute; inset: auto 0 14px; text-align: center; font-size: 14px; font-weight: 500; color: var(--ink-2);

@@ -124,27 +124,28 @@ Built to learn fast, not just to browse:
   with the female voice, the man with the male one. She looks at the learner while speaking and
   while listening, and smiles and nods at a right answer. The × on the face, or "Говорящее лицо:
   Выкл" on the course page, hides it.
-  - How: [TalkingHead](https://github.com/met4citizen/TalkingHead) 1.8.2 on three.js 0.186 (both
-    MIT), loaded from jsDelivr through the import map in `learn.html` only when the face is first
-    shown (`public/avatar.js`). The sound still plays through the page's own audio player (silent
-    mode, every speed); each frame the lips follow that player's position, so they stay in sync at
-    0,5× or 2×.
+  - How: the face's own small engine, `public/avatar.js`, on three.js 0.186 (MIT), loaded from
+    jsDelivr through the import map in `learn.html` only when the face is first shown. It draws the
+    head under portrait lighting with soft shadows and moves it: blinking, eyes that stay on the
+    learner while the head sways a little, a resting smile, brows and small nods on stressed words,
+    a smile with a nod for a right answer, breathing. The sound still plays through the page's own
+    audio player (silent mode, every speed); each frame the lips take the mouth shape for that
+    player's position, so they stay in sync at 0,5× or 2×. Words become mouth shapes with the
+    English lip-sync module of [TalkingHead](https://github.com/met4citizen/TalkingHead) (MIT).
   - Lip timing: Deepgram's voice gives no word timings and never says a line twice exactly the
     same way, so with the face on, the page asks for `GET /api/tts?text=…&voice=…&lipsync=1`. The
     server makes the audio, runs that same clip through Nova-3 to time each word, and returns
     `{ audio: base64 MP3, words: [{ w, s, e }] }` (cached a year like the MP3). Without timings (the
     published copy, or if timing fails) words are spread over the loud part of the clip.
-  - Models: `public/avatars/woman.glb` and `man.glb`, TalkingHead's example avatars made with
-    Avaturn and Avatar SDK, **free for non-commercial use only** (see `public/avatars/LICENSE.txt`).
-    They were compressed for phones from 13.8 and 12.3 MB to 6.4 and 5.3 MB (meshopt, 16-bit
-    blendshape deltas; vertex positions and normals left as they were, since quantizing those
-    broke TalkingHead's posing and shading). Only the face for the chosen voice is downloaded.
-  - The look: the woman is retouched in the model itself: a softer oval face (jaw up to 12%
-    narrower, chin 6 mm longer) and makeup painted into a 2048 px face texture (smoothed, warmer
-    skin, contour, highlight, blush, winged eyeliner, eyeshadow, rose lips with gloss, fuller
-    lashes). At run time `avatar.js` adds portrait lighting (a warm key light to the side, a soft
-    fill, a warm rim light behind), skin with a soft glow instead of shine, glossy eyes with
-    catchlights, dark chestnut hair without glare, and a soft resting smile.
+  - Models: `public/avatars/woman.glb` (2.3 MB) and `man.glb` (1.7 MB) are Avatar SDK's "Head 2.0"
+    sample busts: heads made from a photo, so the skin is a real face rather than a painted one.
+    The woman also wears the long hair of TalkingHead's Avaturn example avatar. **Neither is free
+    for commercial use** (see `public/avatars/LICENSE.txt`, which also lists what was changed).
+    Only the face for the chosen voice is downloaded.
+  - The look, in `avatar.js`: a warm key light in front, to one side and above, with soft
+    shadows; a cool fill; a warm rim light behind; skin with a soft glow instead of shine; wet
+    eyes with catchlights; teeth brightened (the models' are painted grey); hair drawn in two
+    passes (solid where the strands are dense, then softly for the fine edges) without glare.
 - **A checklist for every lesson:** two tasks, *learn the phrases* (each one "Знаю" at least once)
   and *pass the test* (6 of 8 or better). The course list shows each lesson's progress as a ring
   that fills up and turns into a green tick when both are done, with ✓ chips for the two tasks;
