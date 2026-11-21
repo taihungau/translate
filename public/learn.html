@@ -641,13 +641,31 @@
       animation: note-pulse 1.6s ease-in-out infinite;
     }
     @keyframes note-pulse { 50% { opacity: 0.5; } }
-    .avatar-close {
-      position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; border: 0; border-radius: 50%;
+    .avatar-tool {
+      position: absolute; top: 8px; width: 30px; height: 30px; border: 0; border-radius: 50%;
       display: grid; place-items: center; background: rgba(0, 0, 0, 0.18); color: #fff;
       -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
     }
-    .avatar-close svg.i { width: 16px; height: 16px; stroke-width: 2.4; }
-    .avatar-close:active { opacity: 0.55; }
+    .avatar-tool::after { content: ""; position: absolute; inset: -7px; } /* a 44 px target */
+    .avatar-close { right: 8px; }
+    .avatar-look { left: 8px; }
+    .avatar-tool svg.i { width: 16px; height: 16px; stroke-width: 2.4; }
+    .avatar-look svg.i { stroke-width: 2; }
+    .avatar-tool:active { opacity: 0.55; }
+
+    /* Appearance: under the face, a row of colours for each thing that can be changed */
+    .look { display: flex; flex-direction: column; gap: 14px; }
+    .look-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .swatch-img.dot {
+      width: 44px; height: 44px; border-radius: 50%;
+      background-image: radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.34), transparent 46%), radial-gradient(circle at 60% 78%, rgba(0, 0, 0, 0.2), transparent 62%);
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+    }
+    .look .swatch { width: 62px; }
+    .look .swatch-label { font-size: 11.5px; white-space: nowrap; }
+    .option-link { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 12px; border-radius: 15px; background: var(--fill); color: var(--accent); font-size: 14px; font-weight: 500; text-decoration: none; }
+    .option-link svg.i { width: 15px; height: 15px; }
+    .option-link:active { opacity: 0.55; }
 
     /* My level: the levels a section has, A–G, as a segmented switch */
     .level-card { display: flex; flex-direction: column; gap: 12px; }

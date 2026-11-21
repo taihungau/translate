@@ -124,6 +124,12 @@ Built to learn fast, not just to browse:
   with the female voice, the man with the male one. She looks at the learner while speaking and
   while listening, and smiles and nods at a right answer. The × on the face, or "Говорящее лицо:
   Выкл" on the course page, hides it.
+  - Her own look (Внешность, `#look`): the palette button on the face, or "Внешность" next to the
+    face's switch, opens a page with the face and four rows of colours: hair (also brows and
+    beard), eyes, lipstick and skin tone. A pick shows at once, is kept on the device
+    (`learnLook`), and each voice's face has its own. "Как было" goes back to the photo.
+    The colours are changed as the face is drawn: each model carries a small map of what is hair,
+    lips, skin and iris, and a new colour keeps the photo's light and dark.
   - How: the face's own small engine, `public/avatar.js`, on three.js 0.186 (MIT), loaded from
     jsDelivr through the import map in `learn.html` only when the face is first shown. It draws the
     head under portrait lighting with soft shadows and moves it: blinking, eyes that stay on the
@@ -145,7 +151,8 @@ Built to learn fast, not just to browse:
   - Sharpness: the samples' face is a small soft photo (about 260 px across). Each texture was
     rebuilt at three times the size with the face restored by two face-restoration networks
     (GFPGAN, then GPEN), so lashes, irises, brows, lips and beard are crisp even in close-up, and
-    the eyeballs were repainted so that the eyes can look around.
+    the eyeballs were repainted so that the eyes can look around. The scripts that built the
+    models, and how to run them, are in `tools/avatar/`.
   - The look, in `avatar.js`: a warm key light in front, to one side and above, with soft
     shadows; a cool fill; a warm rim light behind; skin with a soft glow instead of shine; wet
     eyes with catchlights; teeth brightened (the models' are painted grey); hair drawn in two

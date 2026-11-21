@@ -5,7 +5,7 @@
 import { TRACKS, LEVELS, LESSONS } from "./lessons.js";
 import { mergeProgress, normalizeCode, SYNC_KEYS } from "./learn-sync.js";
 import { compareSpeech, checkWriting, testQuestions, choices, grade, isLearned, isDue, verdict, dayKey, streak, clozeItem, buildWorkout, LEVEL_LETTERS, placementStep } from "./learn-core.js";
-import { avatarSupported, avatarStage, avatarRefresh, avatarSay, avatarHush, avatarReact, avatarListen } from "./avatar.js";
+import { avatarSupported, avatarStage, avatarRefresh, avatarSay, avatarHush, avatarReact, avatarListen, avatarLook, avatarChoices, avatarDefault } from "./avatar.js";
 
 const APP_URL = "https://translate-hyperlinks-projects.vercel.app/";
 const view = document.getElementById("view");
@@ -187,6 +187,9 @@ const canPlay = () => Boolean(RECORDINGS || serverTts || tts);
 // audio files (the server's voice or the published recordings) and WebGL 2.
 const CAN_DRAW_FACE = avatarSupported();
 let avatarOn = load("learnAvatar", true);
+// How each face looks: { female: { hair, eyes, lips, skin }, male: {…} }, ids from avatar.js; nothing picked = as photographed.
+let faceLooks = load("learnLook", {});
+for (const voice of ["female", "male"]) avatarLook(voice, faceLooks[voice] ?? {});
 const faceOn = () => avatarOn && CAN_DRAW_FACE && Boolean(RECORDINGS || serverTts);
 
 const bundles = new Map(); // lesson id → Promise<{ text: data URL }>
@@ -322,13 +325,14 @@ function faceSays(text, entry) {
   if (faceOn()) avatarSay(text, player, entry.words);
 }
 
-/** The talking face, for a screen where phrases are heard or said; × hides it everywhere. */
+/** The talking face, for a screen where phrases are heard or said; × hides it everywhere, the palette opens its colours. */
 function faceCard() {
   if (!faceOn()) return null;
   return h("div", { class: "avatar-card" },
     avatarStage(voiceChoice),
+    h("a", { class: "avatar-tool avatar-look", href: "#look", "aria-label": "Внешность: цвет волос, глаз, губ" }, icon("palette", "u")),
     h("button", {
-      class: "avatar-close", type: "button", "aria-label": "Скрыть лицо",
+      class: "avatar-tool avatar-close", type: "button", "aria-label": "Скрыть лицо",
       onclick: (e) => {
         avatarOn = false;
         save("learnAvatar", false);
@@ -336,6 +340,51 @@ function faceCard() {
         avatarRefresh();
       },
     }, icon("x", "u")));
+}
+
+// Appearance (#look): the face, and a row of colours for each thing that can be changed. A pick
+// shows at once and is kept on this device; each voice has its own face and its own picks.
+const LOOK_ROWS = [["hair", "Волосы"], ["eyes", "Глаза"], ["lips", "Губы"], ["skin", "Кожа"]];
+let lookBack = null; // the screen the appearance page was opened from
+function renderLook() {
+  const voice = voiceChoice;
+  document.title = "Внешность · Курс английского";
+  const picked = (kind) => faceLooks[voice]?.[kind] ?? avatarDefault(voice, kind);
+  const pick = (kind, id, button) => {
+    faceLooks = { ...faceLooks, [voice]: { ...faceLooks[voice], [kind]: id } };
+    save("learnLook", faceLooks);
+    avatarLook(voice, faceLooks[voice]);
+    for (const other of button.parentNode.children) other.setAttribute("aria-checked", String(other === button));
+  };
+  const row = ([kind, title]) => h("div", { class: "look-row" },
+    h("span", { class: "option-label", id: `look-${kind}` }, title),
+    h("div", { class: "swatches", role: "radiogroup", "aria-labelledby": `look-${kind}` },
+      avatarChoices(voice, kind).map(([id, name, colour]) => h("button", {
+        class: "swatch", type: "button", role: "radio", "aria-checked": String(id === picked(kind)),
+        onclick: (e) => pick(kind, id, e.currentTarget),
+      }, h("span", { class: "swatch-img dot", style: `background-color: ${colour}` }), h("span", { class: "swatch-label" }, name)))));
+  const line = voice === "female" ? "Hi! How do I look?" : "Hello! How do I look?";
+  setView(
+    h("div", { class: "nav" }, backLink(`#${lookBack ?? currentTrack}`, "Назад")),
+    h("h1", {}, "Внешность"),
+    CAN_DRAW_FACE
+      ? h("div", { class: "avatar-card" }, avatarStage(voice))
+      : h("p", { class: "foot" }, "Этот браузер не может показать лицо."),
+    h("section", { class: "card look", "aria-label": "Цвета" },
+      LOOK_ROWS.map(row),
+      h("div", { class: "btn-row" },
+        canPlay() ? h("button", { class: "btn", type: "button", onpointerdown: () => prefetch(line), onclick: (e) => speak(line, speed, e.currentTarget) }, icon("play"), "Послушать") : null,
+        h("button", {
+          class: "btn", type: "button",
+          onclick: () => {
+            faceLooks = { ...faceLooks, [voice]: {} };
+            save("learnLook", faceLooks);
+            avatarLook(voice, {});
+            renderLook();
+          },
+        }, icon("repeat"), "Как было"))),
+    h("p", { class: "foot" }, `Это лицо ${voice === "female" ? "женского" : "мужского"} голоса; у другого голоса своё. Выбор хранится на этом устройстве.`),
+  );
 }
 
 function playButton(text, label = "Слушать") {
@@ -540,7 +589,8 @@ function todayCard() {
                 avatarOn = on;
                 save("learnAvatar", on);
                 renderCourse(currentTrack);
-              }))))
+              }))),
+            avatarOn ? h("a", { class: "option-link", href: "#look" }, icon("palette", "u"), "Внешность") : null)
         : null,
       h("div", { class: "option" }, h("span", { class: "option-label", id: "themeLabel" }, "Тема"),
         h("div", { class: "chips theme-choice", role: "radiogroup", "aria-labelledby": "themeLabel" },
@@ -2320,6 +2370,11 @@ function route(_event, keepScroll = false) {
   attempt?.cancel();
   stopSound();
   const hash = location.hash.slice(1);
+  if (hash === "look") { // the face's colours: an exercise left for it stays as it was
+    renderLook();
+    return top();
+  }
+  lookBack = hash || null;
   if (!hash.startsWith("test-")) testRun = null;
   const skillPage = /^skill-(speak|listen|read|write)$/.exec(hash);
   if (skillPage) { session = null; drill = null; renderSkill(skillPage[1]); return top(); }

@@ -21,13 +21,58 @@ const FACES = {
     url: "avatars/woman.glb",
     frame: { y: 0.082, height: 0.345 }, // what the camera frames: the middle of the picture and its height
     rest: { mouthSmileLeft: 0.2, mouthSmileRight: 0.2, cheekSquintLeft: 0.06, cheekSquintRight: 0.06 }, // a soft resting smile
+    hair: "chestnut", // her long hair is a separate piece with no colour of its own: this one unless she picks another
+    underHair: 0.3, // how dark the head's own painted hair is under it
+    own: { eyes: "#8d9a84", lips: "#cf9689", skin: "#f1cfb8" }, // as photographed, for the settings' swatches
   },
   male: {
     url: "avatars/man.glb",
     frame: { y: 0.085, height: 0.34 },
     rest: { mouthSmileLeft: 0.14, mouthSmileRight: 0.14 },
+    own: { hair: "#a06a3a", eyes: "#5f7088", lips: "#c8837a", skin: "#f3c7aa" },
   },
 };
+
+/**
+ * What can be changed about a face, for the settings page: [id, Russian name, colour, strength].
+ * "own" is as photographed. Hair colour also goes to brows and beard; a lipstick has a strength;
+ * a skin tone is what the photo's skin is multiplied by (red, green, blue).
+ */
+export const AVATAR_LOOKS = {
+  hair: [
+    ["own", "Свои"], ["blonde", "Блонд", "#cba669"], ["fair", "Русые", "#8a6541"], ["chestnut", "Каштановые", "#523128"],
+    ["dark", "Тёмные", "#2b1a13"], ["black", "Чёрные", "#100e0f"], ["ginger", "Рыжие", "#7d3d1d"], ["pink", "Розовые", "#cf7c9c"],
+  ],
+  eyes: [
+    ["own", "Свои"], ["blue", "Голубые", "#5d87b4"], ["grey", "Серые", "#848f99"], ["green", "Зелёные", "#6b8a5a"],
+    ["hazel", "Ореховые", "#8a7040"], ["brown", "Карие", "#6e4526"], ["dark", "Тёмные", "#35221a"],
+  ],
+  lips: [
+    ["own", "Свои"], ["nude", "Нюд", "#b97f6d", 0.6], ["pink", "Розовая", "#d4687f", 0.7], ["coral", "Коралловая", "#dd5a48", 0.75],
+    ["red", "Красная", "#b01c2a", 0.85], ["berry", "Ягодная", "#7d1f41", 0.85],
+  ],
+  skin: [["own", "Своя"], ["fair", "Светлая", [1.09, 1.08, 1.09]], ["tan", "Загар", [0.9, 0.79, 0.69]], ["deep", "Смуглая", [0.7, 0.56, 0.45]]],
+};
+const faceChoices = { female: {}, male: {} }; // what was picked for each face: { hair, eyes, lips, skin } as ids
+
+/** The choices a face offers, with the colour to show for each: [id, name, css colour]. */
+export function avatarChoices(voice, kind) {
+  const face = FACES[voice] ?? FACES.female;
+  const css = (c) => (Array.isArray(c) ? `rgb(${c.map((x, i) => Math.round(Math.min(1, x ** (1 / 2.2) * [0.945, 0.81, 0.72][i]) * 255)).join(" ")})` : c);
+  return AVATAR_LOOKS[kind]
+    .filter(([id]) => id !== "own" || face.own[kind]) // a face with no colour of its own for this has no "own"
+    .map(([id, name, colour]) => [id, name, id === "own" ? face.own[kind] : css(colour)]);
+}
+
+/** What a face shows when nothing was picked. */
+export const avatarDefault = (voice, kind) => ((FACES[voice] ?? FACES.female).own[kind] ? "own" : FACES[voice][kind]);
+
+/** Changes a face's colours: `choice` is { hair, eyes, lips, skin }, each an id from AVATAR_LOOKS. */
+export function avatarLook(voice, choice = {}) {
+  if (!faceChoices[voice]) return;
+  faceChoices[voice] = { ...choice };
+  if (faceModel?.who === voice) tintFace(faceModel);
+}
 const FACE_VISEMES = ["PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"];
 const OPEN_VISEMES = { aa: 1, O: 0.8, E: 0.6, I: 0.45, U: 0.5, CH: 0.3, kk: 0.3 }; // how far each opens the mouth: the head moves a little with it
 const EYE_TURN = 12 * DEG; // the furthest the eyes turn
@@ -47,7 +92,7 @@ const FACE_LOOK = {
   eyes: { roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.7 },
   teeth: { roughness: 0.3, envMapIntensity: 0.5, color: [1.7, 1.66, 1.57], glow: 0.1 }, // the model's are painted grey, as if always in the dark
   mouth: { roughness: 0.28, color: 0xb8b0ae, envMapIntensity: 0.35 },
-  hair: { roughness: 0.62, envMapIntensity: 0.35, color: [0.8, 0.74, 0.7], normalScale: 0.7, specularIntensity: 0.4, solid: 0.55 }, // the colour multiplies the strands' own brown
+  hair: { roughness: 0.62, envMapIntensity: 0.35, normalScale: 0.7, specularIntensity: 0.4, solid: 0.55 }, // its colour: see AVATAR_LOOKS
 };
 
 /** True when this browser can draw the face (WebGL 2). */
@@ -236,6 +281,7 @@ async function loadFace() {
       }
     }
     faceModel = stageFace(THREE, gltf.scene, who);
+    tintFace(faceModel);
     scene.add(faceModel.root);
     fitFace();
     await renderer.compileAsync(scene, camera); // shaders ready before the face appears
@@ -254,12 +300,17 @@ async function loadFace() {
 function stageFace(THREE, root, who, look = FACE_LOOK) {
   const parts = []; // the meshes with face shapes: skin, eyes, teeth, mouth
   const all = [];
+  // the colours that can be changed, as the shaders read them (see tintFace)
+  const tint = {
+    uHair: { value: new THREE.Vector4() }, uIris: { value: new THREE.Vector4() }, uLips: { value: new THREE.Vector4() },
+    uSkin: { value: new THREE.Vector3(1, 1, 1) }, uUnder: { value: 1 }, uLum: { value: new THREE.Vector4(1, 1, 1, 1) },
+  };
   root.traverse((o) => {
     if (!o.isMesh) return;
     all.push(o);
     if (o.morphTargetInfluences) parts.push(o);
     o.frustumCulled = false; // its shapes move outside the box worked out from the rest pose
-    o.material = dressFace(THREE, o.material, look);
+    o.material = dressFace(THREE, o.material, look, tint);
     const { kind } = o.material.userData;
     o.castShadow = kind === "skin" || kind === "hair";
     o.receiveShadow = kind !== "soft" && kind !== "teeth";
@@ -270,6 +321,7 @@ function stageFace(THREE, root, who, look = FACE_LOOK) {
   for (const o of all.filter((o) => o.material.userData.kind === "hair")) {
     const soft = o.material.clone();
     soft.userData.kind = "soft";
+    recolourFace(soft, tint);
     const twin = new THREE.SkinnedMesh(o.geometry, dressFace(THREE, soft, look));
     twin.bind(o.skeleton, o.bindMatrix);
     twin.frustumCulled = false;
@@ -285,6 +337,8 @@ function stageFace(THREE, root, who, look = FACE_LOOK) {
     root,
     parts,
     all,
+    tint,
+    colour: new THREE.Color(),
     index,
     smooth: new Float32Array(n), // expressions ease towards what is wanted…
     want: new Float32Array(n),
@@ -311,15 +365,16 @@ function stageFace(THREE, root, who, look = FACE_LOOK) {
 }
 
 /** A material in the look: skin, eyes, teeth, the inside of the mouth and hair each get their own treatment. */
-function dressFace(THREE, m, look) {
+function dressFace(THREE, m, look, tint = null) {
   let p = m;
   if (!m.isMeshPhysicalMaterial) { // the model's is a standard material: copied into a physical one, once
     p = new THREE.MeshPhysicalMaterial();
     THREE.MeshStandardMaterial.prototype.copy.call(p, m);
     // hair comes as strands on cards, in two layers: a solid one (cut out by the texture) and a soft one over it
-    p.userData = { kind: ["hairsoft", "hair", "eyes", "teeth", "mouth"].find((k) => m.name.toLowerCase().startsWith(k)) ?? "skin" };
+    p.userData = { ...m.userData, kind: ["hairsoft", "hair", "eyes", "teeth", "mouth"].find((k) => m.name.toLowerCase().startsWith(k)) ?? "skin" };
     if (p.userData.kind === "hairsoft") p.userData.kind = "soft";
     m.dispose();
+    recolourFace(p, tint);
   }
   const { kind } = p.userData;
   const s = look[kind === "soft" ? "hair" : kind];
@@ -337,7 +392,6 @@ function dressFace(THREE, m, look) {
     p.color.setRGB(...s.color);
     p.emissiveMap = p.map; p.emissive.setScalar(s.glow); // never quite dark, behind the lips
   } else {
-    p.color.setRGB(...s.color);
     p.specularIntensity = s.specularIntensity;
     p.normalScale.set(s.normalScale, s.normalScale);
     p.transparent = kind === "soft";
@@ -346,6 +400,77 @@ function dressFace(THREE, m, look) {
   }
   p.needsUpdate = true;
   return p;
+}
+
+// The colours that can be changed are changed as the face is drawn. A model brings a second
+// picture, laid out like its texture, that says what is what: red for hair (with blue: brows and
+// beard, which have skin under them; on the eyeballs: the iris), green for lips, blue for skin. It
+// comes in the material's occlusion slot. A new colour keeps the texture's light and dark: it is
+// multiplied by how bright each point is next to the average of its kind (uLum, from the model).
+const FACE_TINTS = `
+uniform sampler2D uMask;
+uniform vec4 uHair; // a colour, and how much of it (0: as photographed)
+uniform vec4 uIris;
+uniform vec4 uLips;
+uniform vec3 uSkin;
+uniform float uUnder;
+uniform vec4 uLum; // average brightness of: painted hair, lips, irises, the strands of added hair
+float faceLum( vec3 c ) { return dot( c, vec3( 0.2126, 0.7152, 0.0722 ) ); }
+`;
+const FACE_TINT = {
+  skin: `
+  {
+    vec4 mk = texture2D( uMask, vMapUv );
+    float lum = faceLum( diffuseColor.rgb );
+    diffuseColor.rgb *= mix( vec3( 1.0 ), uSkin, mk.b * ( 1.0 - mk.r ) * ( 1.0 - 0.5 * mk.g ) );
+    diffuseColor.rgb = mix( diffuseColor.rgb, uLips.rgb * ( lum / uLum.y ), smoothstep( 0.2, 0.8, mk.g ) * uLips.a );
+    // no brighter than hair gets: at its edge the map takes in a little skin, and a light colour would glow on it
+    diffuseColor.rgb = mix( diffuseColor.rgb, uHair.rgb * min( lum / uLum.x, 1.7 ), mk.r * uHair.a * ( 1.0 - 0.2 * mk.b ) );
+    diffuseColor.rgb *= mix( 1.0, uUnder, mk.r * ( 1.0 - mk.b ) ); // the head's own hair, in the shade of the hair over it
+  }`,
+  eyes: `
+  {
+    float iris = texture2D( uMask, vMapUv ).r;
+    diffuseColor.rgb = mix( diffuseColor.rgb, uIris.rgb * ( faceLum( diffuseColor.rgb ) / uLum.z ), iris * uIris.a );
+  }`,
+  hair: `
+  diffuseColor.rgb = mix( diffuseColor.rgb, uHair.rgb * ( faceLum( sampledDiffuseColor.rgb ) / uLum.w ), uHair.a );`,
+};
+
+/** Lets a material's colours be changed (see FACE_TINTS): skin, eyes, and the strands of added hair. */
+function recolourFace(p, tint) {
+  const { kind } = p.userData;
+  const code = FACE_TINT[kind === "soft" ? "hair" : kind];
+  const mask = p.aoMap; // not occlusion: the picture of what is what
+  p.aoMap = null;
+  if (!tint || !code || (kind !== "hair" && kind !== "soft" && !mask)) return;
+  const lum = p.userData.look ?? {};
+  if (lum.hair) tint.uLum.value.setX(lum.hair);
+  if (lum.lips) tint.uLum.value.setY(lum.lips);
+  if (lum.iris) tint.uLum.value.setZ(lum.iris);
+  if (lum.strands) tint.uLum.value.setW(lum.strands);
+  p.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, tint, { uMask: { value: mask } });
+    shader.fragmentShader = shader.fragmentShader
+      .replace("void main() {", `${FACE_TINTS}void main() {`)
+      .replace("#include <map_fragment>", `#include <map_fragment>\n#ifdef USE_MAP${code}\n#endif`);
+  };
+  p.customProgramCacheKey = () => `face-${kind}`;
+}
+
+/** Sets the colours picked for this face (avatarLook), or its own. */
+function tintFace(m) {
+  const choice = faceChoices[m.who] ?? {};
+  const pick = (kind) => AVATAR_LOOKS[kind].find(([id]) => id === (choice[kind] ?? m.face[kind])) ?? [];
+  const set = (uniform, colour, amount = 1) => {
+    if (colour) uniform.value.set(...m.colour.set(colour).toArray(), amount);
+    else uniform.value.set(0, 0, 0, 0);
+  };
+  set(m.tint.uHair, pick("hair")[2]);
+  set(m.tint.uIris, pick("eyes")[2]);
+  set(m.tint.uLips, pick("lips")[2], pick("lips")[3]);
+  m.tint.uSkin.value.set(...(pick("skin")[2] ?? [1, 1, 1]));
+  m.tint.uUnder.value = m.face.underHair ?? 1;
 }
 
 // ---------------------------------------------------------------- lips
