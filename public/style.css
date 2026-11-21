@@ -144,7 +144,7 @@ body.immersive {
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
-html, body { height: 100%; }
+html, body { height: 100%; overscroll-behavior: none; } /* a swipe down scrolls the subtitles; it must not reload the page */
 body {
   margin: 0;
   background: var(--bg);
@@ -210,25 +210,68 @@ a.tab { text-decoration: none; }
 
 /* ---------- live mode ---------- */
 .live { flex-direction: column; position: relative; }
-.stage {
-  flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: clamp(8px, 2vh, 18px); text-align: center;
+.stage { flex: 1; min-height: 0; position: relative; --sub-scale: 1; --stage-h: 60vh; /* its real height, set by app.js */ }
+.stage-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
   padding: 16px calc(24px + var(--safe-r)) 16px calc(24px + var(--safe-l));
-  --sub-scale: 1;
 }
+.stage:not(.empty) .stage-empty, .stage.empty .feed { display: none; }
+/* The transcript. Its newest line rests a little below the middle of the stage; the lines before
+   it sit above, dimmed, and fade out towards the top, so the screen never fills up. Scrolling up
+   (looking back) shows everything said so far. */
+.feed {
+  position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  -webkit-overflow-scrolling: touch; outline-offset: -3px; --fade: 22%; --fade-end: 0%;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade-end)), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--fade), #000 calc(100% - var(--fade-end)), transparent 100%);
+}
+.feed::-webkit-scrollbar { display: none; }
+.lines {
+  /* 1px taller than the stage: always scrollable, so a swipe belongs to the transcript */
+  box-sizing: border-box; min-height: calc(100% + 1px);
+  display: flex; flex-direction: column; justify-content: flex-end;
+  padding: calc(var(--stage-h) * .18 + var(--pad-t, 0px)) calc(24px + var(--safe-r)) calc(var(--stage-h) * .3) calc(24px + var(--safe-l));
+  /* the lines glide up when a new one arrives (app.js moves .roll); clipped here, that movement
+     never adds to what can be scrolled */
+  overflow: hidden; overflow: clip;
+}
+.roll { display: flex; flex-direction: column; align-items: center; gap: clamp(14px, 3vh, 28px); text-align: center; }
+.entry {
+  display: flex; flex-direction: column; align-items: center; gap: clamp(5px, 1.2vh, 10px); max-width: 100%;
+  opacity: .5; transition: opacity .5s var(--ease);
+}
+.entry.newest { opacity: 1; }
+.entry.gone { opacity: 0; }
+/* looking back: every line readable, the fade at the top smaller, and one at the bottom under the
+   Latest button */
+.stage.reviewing .entry { opacity: .92; }
+.stage.reviewing .feed { --fade: 9%; --fade-end: 16%; }
 .sub-orig {
   color: var(--text-2); font-weight: 500; letter-spacing: -.01em; max-width: 30ch;
-  font-size: clamp(16px, min(3.6vw, 4.2vh), 34px); line-height: 1.25; min-height: 1.25em;
-  text-wrap: balance; transition: opacity .45s var(--ease);
+  font-size: clamp(16px, min(3.6vw, 4.2vh), 34px); line-height: 1.25;
+  text-wrap: balance;
 }
 .sub-orig .interim { color: var(--text-3); }
 .sub-trans {
   color: var(--sub); font-weight: 700; letter-spacing: -.02em; max-width: 22ch;
   font-size: calc(clamp(26px, min(7.2vw, 8.5vh), 84px) * var(--sub-scale)); line-height: 1.12;
-  text-wrap: balance; transition: opacity .45s var(--ease);
+  text-wrap: balance;
 }
-.sub-orig.faded, .sub-trans.faded { opacity: 0; }
+.sub-trans .sub-text:empty { display: none; }
 .hide-orig .sub-orig { display: none; }
+/* Pronunciation only under the newest line: earlier ones stay short. */
+.entry:not(.last) .say { display: none; }
+/* Back to the newest line, while looking back */
+.latest {
+  position: absolute; z-index: 4; left: 50%; bottom: 14px; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 18px 0 14px; border: 0; border-radius: 22px;
+  background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; white-space: nowrap;
+  box-shadow: 0 8px 24px var(--shadow); animation: latest-in .25s var(--ease);
+}
+.latest svg { width: 18px; height: 18px; stroke-width: 2.2; }
+.latest:active { opacity: .7; }
+@keyframes latest-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+.stage.reviewing .tap-hint { opacity: 0 !important; }
 /* Pronunciation in the other alphabet, right under its line. */
 .say { font-weight: 400; font-style: italic; letter-spacing: 0; color: var(--text-2); margin-top: .2em; }
 .say:empty { display: none; }
@@ -251,6 +294,7 @@ a.tab { text-decoration: none; }
 
 .tap-hint {
   position: absolute; left: 50%; bottom: calc(18px + var(--safe-b)); transform: translateX(-50%);
+  width: max-content; max-width: calc(100% - 32px); text-align: center; text-wrap: balance;
   font-size: 13px; color: var(--text-3); opacity: 0; pointer-events: none; transition: opacity .4s;
 }
 
@@ -295,7 +339,8 @@ a.tab { text-decoration: none; }
 /* Full-screen (cinema) mode: nothing but the subtitles. Works on every device; where the browser
    allows it, the page also enters real full screen. */
 body.immersive .chrome { display: none; }
-body.immersive .stage { padding-top: calc(16px + var(--safe-t)); padding-bottom: calc(16px + var(--safe-b)); }
+body.immersive .lines { --pad-t: var(--safe-t); }
+body.immersive .latest { bottom: calc(14px + var(--safe-b)); }
 body.immersive .tap-hint { opacity: 1; }
 body.immersive.show-controls .tap-hint { opacity: 0; }
 .exit-cinema {
@@ -348,6 +393,10 @@ body.listening .dock .status:empty { display: none; }
   .record svg { width: 26px; height: 26px; }
   .sub-trans { max-width: 34ch; }
   .sub-orig { max-width: 44ch; }
+  /* little height: the newest line sits lower, leaving room for one line above it */
+  .lines { padding-bottom: calc(var(--stage-h) * .1 + 34px); } /* clear of the hint at the bottom */
+  .roll { gap: 10px; }
+  .feed { --fade: 14%; }
 }
 @media (max-width: 440px) {
   /* Phones: tabs show their icons only, so Live, Video and Learn fit beside the buttons. */
@@ -385,8 +434,8 @@ body.listening .dock .status:empty { display: none; }
 .row-icon.blue { background: var(--accent); } .row-icon.green { background: var(--green); }
 .row-icon.red { background: var(--red); } .row-icon.orange { background: var(--orange); }
 .row-icon.gray { background: var(--gray); } .row-icon.purple { background: #bf5af2; }
-.row-label { flex: 1 0 auto; }
-.row-control { flex: 0 1 auto; min-width: 0; max-width: 58%; display: flex; justify-content: flex-end; overflow: hidden; }
+.row-label { flex: 1 1 0; min-width: 0; } /* a long label wraps instead of pushing its switch off the row */
+.row-control { flex: none; min-width: 0; max-width: 58%; display: flex; justify-content: flex-end; overflow: hidden; }
 .row-control select { width: 100%; }
 .row-note { margin: 0; padding: 0 14px 10px 56px; font-size: 13px; color: var(--text-2); }
 .row-note:empty { display: none; }

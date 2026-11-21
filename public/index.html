@@ -33,6 +33,7 @@
     <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.5C10.3 5.2 7.9 4.5 4 4.5v13c3.9 0 6.3.7 8 2 1.7-1.3 4.1-2 8-2v-13c-3.9 0-6.3.7-8 2zM12 6.5v13"/></symbol>
     <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" class="fill"/></symbol>
     <symbol id="i-captions" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="3"/><path d="M10 10.5a2 2 0 1 0 0 3M16.5 10.5a2 2 0 1 0 0 3"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
   </svg>
 
   <div class="app">
@@ -42,7 +43,7 @@
         <span class="brand-mark"><svg><use href="#i-captions"/></svg></span>
         <span class="brand-text">
           <span class="brand-name">Subtitles</span>
-          <span class="brand-sub"><span id="dirName">English → Russian</span> · <span id="appVersion">v9</span></span>
+          <span class="brand-sub"><span id="dirName">English → Russian</span> · <span id="appVersion">v10</span></span>
         </span>
       </div>
       <div class="segmented" role="tablist" aria-label="Mode">
@@ -61,16 +62,21 @@
 
     <!-- LIVE MODE -->
     <main id="live" class="panel live active">
-      <div id="liveStage" class="stage" aria-live="polite">
-        <!-- What was said, then its translation; each with a pronunciation line in the other alphabet. -->
-        <div class="sub-orig" id="liveOrig"><div class="sub-text"></div><div class="say"></div></div>
-        <div class="sub-trans" id="liveTrans"><div class="sub-text"><span class="placeholder">
+      <div id="liveStage" class="stage empty">
+        <div class="stage-empty"><span class="placeholder">
           <span class="placeholder-icon"><svg><use href="#i-captions"/></svg></span>
           <span class="placeholder-title">Ready when the film starts</span>
           <span class="placeholder-text">Tap the microphone and hold your phone towards the sound. Translated subtitles appear here as people speak.</span>
           <a class="placeholder-link" href="learn.html" lang="ru"><svg><use href="#i-book"/></svg>Курс английского</a>
-        </span></div><div class="say"></div></div>
-        <div class="tap-hint">Tap to show controls</div>
+        </span></div>
+        <!-- The transcript: one entry per phrase (what was said, then its translation), newest at
+             the bottom. The newest stays in place; earlier ones move up, dim, and clear when there
+             has been time to read them. Scrolling up shows everything said so far. -->
+        <div class="feed" id="liveFeed" tabindex="0">
+          <div class="lines"><div class="roll" id="liveLines" role="log" aria-live="polite" aria-label="Subtitles"></div></div>
+        </div>
+        <button class="latest" id="liveLatest" hidden><svg><use href="#i-down"/></svg><span id="liveLatestLabel">Latest</span></button>
+        <div class="tap-hint">Tap for controls · swipe down for earlier lines</div>
       </div>
       <button class="exit-cinema" id="exitCinema"><svg><use href="#i-close"/></svg><span>Exit full screen</span></button>
       <div class="toast" id="toast" role="status" hidden></div>
@@ -169,6 +175,18 @@
         <span class="row-label">Show original too</span>
         <span class="row-control"><input type="checkbox" id="liveShowOrig" class="switch" checked></span>
       </label>
+      <label class="row">
+        <span class="row-icon orange"><svg><use href="#i-clock"/></svg></span>
+        <span class="row-label">Time on screen</span>
+        <span class="row-control select-wrap">
+          <select id="liveKeep">
+            <option value="1" selected>Normal</option>
+            <option value="2">Longer</option>
+            <option value="always">Until replaced</option>
+          </select>
+        </span>
+      </label>
+      <p class="row-note">Live lines stay long enough to read, then clear; the lines just before the newest stay above it, dimmed. Longer doubles the time and keeps one more line. Swipe down on the subtitles to see everything said earlier.</p>
     </div>
 
     <p class="group-title">Pronunciation</p>

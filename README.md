@@ -8,11 +8,26 @@ It has two modes:
 
 - **Live (microphone).** Press Start, allow the microphone and play the movie out loud. The
   browser transcribes the English it hears, and each phrase is shown in large Russian text a
-  moment after it is spoken, then fades like a real subtitle. With Chrome's built-in translator,
+  moment after it is spoken. With Chrome's built-in translator,
   Russian appears while the sentence is still being spoken and is corrected when it ends. The
   app is always dark for use in a cinema, and the controls fade out while it is listening. Fullscreen fills the screen with
   the subtitle panel; English can be shown underneath if you want it. Each phrase is sent with
   the previous few lines so the translation keeps context (who is "you", ты vs вы, running jokes).
+  - **Time to read.** Nobody knows when the next line of live speech will come, so a new line
+    doesn't replace the one before it. The newest line stays in place, bright; the two lines
+    before it move up and stay, dimmed, so there is time to finish reading them while the next
+    one is spoken. Each line clears once there has been time to read it (6 to 16 seconds,
+    longer for longer lines, counted from when its translation appeared), from the top down, so
+    in quiet scenes the screen goes dark again. Settings → *Time on screen* doubles that and
+    keeps a third earlier line (*Longer*), or keeps lines until newer ones replace them (*Until
+    replaced*).
+  - **Looking back.** Swipe down on the subtitles (or scroll up) to see everything said so far,
+    original and translation. New lines keep arriving below without moving the page; the blue
+    *Latest* button (it counts the new lines) or scrolling back to the end returns to the newest
+    line, and while the film is running the view returns by itself after 15 seconds without a
+    touch. Pronunciation hints show under the newest line only, and a long sentence is shortened
+    to its end while it is the newest and shown in full once it has moved up, so the screen
+    never fills with text. The last 400 lines are kept until the page is closed.
 - **Video + subtitle file.** Load a local video and its English `.srt` or `.vtt` file. Translation
   begins at the playhead and runs ahead of it in parallel batches, so you can press play almost
   right away. Seeking moves the translation to the new position. Russian subtitles (or Russian

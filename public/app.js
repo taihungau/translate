@@ -1,4 +1,4 @@
-import { parseSubtitles, toSrt, findCueAt } from "./subtitles.js";
+import { parseSubtitles, toSrt, findCueAt, readingTime, liveView } from "./subtitles.js";
 import { LocalRecognizer } from "./local-asr.js";
 import { CloudRecognizer } from "./cloud-asr.js";
 import { pronounce, loadDictionary } from "./pronounce.js";
@@ -338,28 +338,29 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
 (() => {
   const toggleBtn = $("liveToggle");
   const statusEl = $("liveStatus");
-  // What was said (smaller) and its translation (large), each with a pronunciation line.
-  const origEl = $("liveOrig");
-  const origText = origEl.querySelector(".sub-text");
-  const origSay = origEl.querySelector(".say");
-  const transEl = $("liveTrans");
-  const transText = transEl.querySelector(".sub-text");
-  const transSay = transEl.querySelector(".say");
   const stage = $("liveStage");
+  const feed = $("liveFeed"); // scrolls: the newest line at the bottom, earlier ones above it
+  const linesEl = $("liveLines");
+  const latestBtn = $("liveLatest");
 
   let listening = false;
-  let fadeTimer = null;
   const recentLines = []; // what was said lately, as context for the translator
 
-  // Each spoken phrase gets a number. While it is still being spoken we translate the
-  // partial text (rank 0, 1, 2...) so the translation appears immediately; the final text gets
-  // rank Infinity. Translations finish out of order, so only show something newer.
-  let phrase = 0;
+  // The transcript: one entry per spoken phrase, oldest first. While a phrase is still being
+  // spoken we translate the partial text (rank 0, 1, 2...) so the translation appears
+  // immediately; the final text gets rank Infinity. Translations finish out of order, so an
+  // entry only takes one newer than it shows.
+  const entries = [];
+  let live = null; // the entry of the phrase being spoken, until its final text arrives
   let interimRank = 0;
-  let shown = { phrase: -1, rank: -1 };
+  let phraseId = 0;
+  let lastFinal = ""; // the phrase that finished last
 
   const MIN_INTERIM_WORDS = 2;
   const MAX_SUBTITLE_CHARS = 110;
+  const KEEP_EARLIER = 2; // lines before the newest that stay on screen, dimmed (3 with more time on screen)
+  const MAX_ENTRIES = 400; // about half an hour of dialogue to scroll back through
+  const REVIEW_IDLE_MS = 15000; // looking back while the film runs: return to the newest line after this
 
   function setStatus(text, isError = false) {
     statusEl.textContent = text;
@@ -374,31 +375,96 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
     document.body.classList.remove("show-controls");
   }
 
-  function showOriginal(finalText, interimText = "") {
-    origEl.classList.remove("faded");
-    origText.textContent = tail(finalText);
-    if (interimText) {
-      const span = document.createElement("span");
-      span.className = "interim";
-      span.textContent = (finalText ? " " : "") + tail(interimText);
-      origText.append(span);
+  // ---- following the newest line, or looking back at earlier ones
+  let following = true;
+  let away = false; // while looking back: has the view left the newest line yet?
+  let newLines = 0; // lines that arrived while looking back
+  let reviewTimer = null;
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  const atBottom = () => feed.scrollHeight - feed.clientHeight - feed.scrollTop < 32;
+  const toBottom = () => { feed.scrollTop = feed.scrollHeight; };
+
+  function armReviewTimer() {
+    clearTimeout(reviewTimer);
+    if (!following && listening) reviewTimer = setTimeout(() => setFollowing(true), REVIEW_IDLE_MS);
+  }
+
+  function setFollowing(on) {
+    if (following !== on) {
+      following = on;
+      away = false;
+      newLines = 0;
+      stage.classList.toggle("reviewing", !on);
+      latestBtn.hidden = on;
+      $("liveLatestLabel").textContent = "Latest";
+      if (on) toBottom();
     }
-    updateSay();
+    armReviewTimer();
   }
 
-  // Pronunciation lines follow whatever is on screen.
-  function updateSay() {
-    const from = fromLang();
-    const to = toLang();
-    origText.lang = from;
-    transText.lang = to;
-    origSay.lang = SAY_LANG[from];
-    transSay.lang = SAY_LANG[to];
-    origSay.textContent = sayFor(origText.textContent, from);
-    transSay.textContent = shown.phrase >= 0 ? sayFor(transText.textContent, to) : "";
+  // Every change to the transcript goes through here. While following, the newest line stays
+  // where it is and the lines above glide up to make room.
+  let glide = null;
+  function change(mutate) {
+    const anchor = following ? entries.at(-1)?.el : null;
+    const before = anchor?.getBoundingClientRect().top;
+    mutate();
+    if (!following) return;
+    toBottom();
+    if (!anchor?.isConnected || reduceMotion.matches) return;
+    const moved = before - anchor.getBoundingClientRect().top;
+    if (moved < 1) return;
+    const offset = glide ? new DOMMatrixReadOnly(getComputedStyle(linesEl).transform).m42 : 0;
+    glide?.cancel();
+    glide = linesEl.animate(
+      [{ transform: `translateY(${offset + moved}px)` }, { transform: "translateY(0)" }],
+      { duration: 280, easing: "cubic-bezier(.2, .8, .2, 1)" },
+    );
+    glide.onfinish = () => { glide = null; };
   }
-  document.addEventListener("saychange", updateSay);
 
+  // Scrolling up (keys, a mouse wheel, a finger) looks back; reaching the end again follows.
+  feed.addEventListener("scroll", () => {
+    if (following) {
+      if (!atBottom()) setFollowing(false);
+      return;
+    }
+    armReviewTimer();
+    if (!atBottom()) away = true;
+    else if (away) setFollowing(true);
+  }, { passive: true });
+  // A swipe down also looks back when there is too little text to scroll; a swipe up at the end
+  // returns to the newest line.
+  let touchStartY = null;
+  feed.addEventListener("touchstart", (e) => {
+    touchStartY = e.touches[0].clientY;
+    armReviewTimer();
+  }, { passive: true });
+  feed.addEventListener("touchmove", (e) => {
+    if (touchStartY === null) return;
+    const dy = e.touches[0].clientY - touchStartY;
+    if (following && dy > 16 && entries.length) setFollowing(false);
+    else if (!following && dy < -16 && atBottom()) setFollowing(true);
+  }, { passive: true });
+  feed.addEventListener("touchend", () => { touchStartY = null; }, { passive: true });
+  feed.addEventListener("wheel", (e) => {
+    if (following && e.deltaY < 0 && entries.length) setFollowing(false);
+    else if (!following && e.deltaY > 0 && atBottom()) setFollowing(true);
+    else armReviewTimer();
+  }, { passive: true });
+  latestBtn.addEventListener("click", (e) => {
+    e.stopPropagation(); // not a tap for the controls
+    setFollowing(true);
+  });
+  // The newest line rests at a set height of the stage, whatever the screen and its rotation.
+  const resized = new ResizeObserver(() => {
+    stage.style.setProperty("--stage-h", `${stage.clientHeight}px`);
+    if (following) toBottom();
+  });
+  resized.observe(stage);
+  resized.observe(linesEl);
+
+  // ---- the lines
   // Long run-on speech would fill the screen; keep the end, which is what is being said now.
   function tail(text) {
     if (text.length <= MAX_SUBTITLE_CHARS) return text;
@@ -406,27 +472,117 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
     return "…" + cut.slice(cut.indexOf(" ") + 1);
   }
 
-  function show(p, rank, translated, original) {
-    if (!translated || p < shown.phrase || (p === shown.phrase && rank <= shown.rank)) return;
-    shown = { phrase: p, rank };
-    transText.textContent = tail(translated);
-    transEl.classList.remove("faded");
-    if (rank === Infinity) showOriginal(original);
-    else updateSay();
-    // Clear the line once it has been on screen long enough, like a real subtitle.
-    clearTimeout(fadeTimer);
-    const hold = Math.min(8000, Math.max(3000, translated.length * 80));
-    fadeTimer = setTimeout(() => {
-      transEl.classList.add("faded");
-      origEl.classList.add("faded");
-    }, hold);
+  /** A new entry at the end, or just above `before`. */
+  function addEntry(before = null) {
+    const from = fromLang();
+    const to = toLang();
+    const line = (cls, lang, sayLang) => {
+      const el = document.createElement("div");
+      el.className = cls;
+      const text = el.appendChild(document.createElement("div"));
+      text.className = "sub-text";
+      text.lang = lang;
+      const say = el.appendChild(document.createElement("div"));
+      say.className = "say";
+      say.lang = sayLang; // written in the other alphabet, which screen readers need to know
+      return { el, text, say };
+    };
+    const entry = {
+      el: document.createElement("div"),
+      orig: line("sub-orig", from, SAY_LANG[from]), // what was said (smaller)
+      trans: line("sub-trans", to, SAY_LANG[to]), // its translation (large)
+      from,
+      to,
+      original: "",
+      interim: "",
+      translated: "",
+      rank: -1,
+      since: null, // when its final translation appeared: its reading time runs from then
+      cleared: false,
+    };
+    entry.el.className = "entry";
+    entry.el.append(entry.orig.el, entry.trans.el);
+    change(() => {
+      const at = before ? entries.indexOf(before) : -1;
+      if (at >= 0) {
+        entries.splice(at, 0, entry);
+        linesEl.insertBefore(entry.el, before.el);
+      } else {
+        const previous = entries.at(-1);
+        entries.push(entry);
+        linesEl.append(entry.el);
+        if (previous) render(previous); // no longer the newest
+      }
+      // Trim only while following: removing lines above someone's reading place would move it.
+      while (following && entries.length > MAX_ENTRIES) entries.shift().el.remove();
+      stage.classList.remove("empty");
+      refresh();
+    });
+    if (!following) {
+      newLines++;
+      $("liveLatestLabel").textContent = newLines === 1 ? "1 new line" : `${newLines} new lines`;
+    }
+    return entry;
+  }
+
+  // The newest entry stays compact: the end of a long sentence, and how to pronounce it. Once
+  // it has moved up it shows the whole sentence, without the pronunciation.
+  function render(entry) {
+    const newest = entry === entries.at(-1);
+    const cut = newest ? tail : (text) => text;
+    entry.orig.text.textContent = cut(entry.original);
+    if (entry.interim) {
+      const span = document.createElement("span");
+      span.className = "interim";
+      span.textContent = (entry.original ? " " : "") + cut(entry.interim);
+      entry.orig.text.append(span);
+    }
+    entry.trans.text.textContent = cut(entry.translated);
+    entry.orig.say.textContent = newest ? sayFor(entry.orig.text.textContent, entry.from) : "";
+    entry.trans.say.textContent = newest && entry.translated ? sayFor(entry.trans.text.textContent, entry.to) : "";
+  }
+  document.addEventListener("saychange", () => {
+    const newest = entries.at(-1);
+    if (newest) change(() => render(newest));
+  });
+
+  function showTranslation(entry, rank, translated) {
+    if (!translated || rank <= entry.rank || !entry.el.isConnected) return;
+    entry.rank = rank;
+    entry.translated = translated;
+    change(() => render(entry));
+  }
+
+  // Which lines are on screen: the newest and the two before it, each until there has been time
+  // to read it (subtitles.js). Looking back shows all of them.
+  let keepFactor = 1; // Settings → Time on screen
+  let refreshTimer = null;
+  function refresh() {
+    clearTimeout(refreshTimer);
+    const now = performance.now();
+    const keep = keepFactor > 1 ? KEEP_EARLIER + 1 : KEEP_EARLIER;
+    const recent = entries.slice(-(keep + 4));
+    const { view, next } = liveView(recent.map((e) => ({
+      expires: e.cleared ? 0 : e.since === null ? null : e.since + readingTime(e.translated || e.original, keepFactor),
+    })), now, keep);
+    recent.forEach((e, i) => {
+      e.el.classList.toggle("newest", view[i] === "newest");
+      e.el.classList.toggle("gone", view[i] === "gone");
+      e.el.classList.toggle("last", e === entries.at(-1));
+    });
+    if (next < Infinity) refreshTimer = setTimeout(refresh, Math.max(50, next - now + 20));
+  }
+  /** A line's reading time starts when its final translation appears (or fails to). */
+  function startClock(entry) {
+    entry.since = performance.now();
+    refresh();
   }
 
   // Partial text: translate the latest version, never queue up stale ones.
   let interimBusy = false;
   let interimNext = null;
   async function translateInterim(text) {
-    interimNext = { p: phrase, rank: interimRank++, text };
+    interimNext = { entry: live, rank: interimRank++, text };
     if (interimBusy) return;
     interimBusy = true;
     while (interimNext) {
@@ -434,14 +590,21 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
       interimNext = null;
       try {
         const [result] = await translate([{ id: "interim", text: job.text }], recentLines.slice(-6));
-        if (job.p === phrase) show(job.p, job.rank, result?.text, job.text);
+        if (job.entry === live) showTranslation(job.entry, job.rank, result?.text);
       } catch { /* the final translation will report errors */ }
     }
     interimBusy = false;
   }
 
   function handleInterim(interim) {
-    showOriginal("", interim);
+    // The on-device recogniser repeats the sentence finished last before the live words; here
+    // that sentence has its own line already.
+    if (!useCloud && lastFinal && interim.startsWith(lastFinal)) interim = interim.slice(lastFinal.length).trim();
+    if (!interim || !listening) return; // words still arriving after Stop are dropped
+    live ??= addEntry();
+    const entry = live;
+    entry.interim = interim;
+    change(() => render(entry));
     // Partial translations are free with the on-device translators. With Claude each one
     // would be a paid request, so Claude only translates finished phrases.
     if (engineSel.value !== "claude" && interim.split(/\s+/).length >= MIN_INTERIM_WORDS) {
@@ -462,26 +625,32 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
   }
 
   async function addPhrase(text, { show: display = true } = {}) {
-    if (!display) {
-      // Already superseded on screen; keep it only as context for later translations.
-      recentLines.push(text);
-      if (recentLines.length > 20) recentLines.shift();
-      return;
-    }
-    const p = phrase++;
-    interimNext = null;
     const context = recentLines.slice(-6);
     recentLines.push(text);
     if (recentLines.length > 20) recentLines.shift();
-
+    lastFinal = text;
+    let entry;
+    if (display) {
+      entry = live ?? addEntry();
+      live = null;
+      interimNext = null;
+    } else {
+      // The on-device recogniser finished this sentence after newer words were already on
+      // screen: it gets its own line just above them.
+      entry = addEntry(live);
+    }
+    entry.original = text;
+    entry.interim = "";
+    change(() => render(entry));
     try {
-      const [result] = await translate([{ id: String(p), text }], context);
-      show(p, Infinity, result?.text, text);
+      const [result] = await translate([{ id: String(phraseId++), text }], context);
+      showTranslation(entry, Infinity, result?.text);
       rememberPhrase(text, result?.text);
       if (listening) setStatus("Listening…");
     } catch (err) {
       setStatus(err.message, true);
     }
+    startClock(entry);
   }
 
   const local = new LocalRecognizer({
@@ -527,7 +696,7 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
     .catch((err) => ({ error: err.message }))
     .then((cfg) => {
       useCloud = Boolean(cfg.cloudSpeech);
-      $("appVersion").textContent = useCloud ? "v9 · Deepgram Nova-3" : "v9 · on-device Whisper (no Deepgram key)";
+      $("appVersion").textContent = useCloud ? "v10 · Deepgram Nova-3" : "v10 · on-device Whisper (no Deepgram key)";
       if (useCloud) {
         setStatus("Ready. Press Start.");
       } else if (cfg.error) {
@@ -645,6 +814,8 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
     prepareEngine();
     keepModelsSaved();
     listening = true;
+    live = null; // a phrase cut off by the last Stop is over
+    armReviewTimer();
     setToggle(true);
     keepAwake();
     setStatus("Starting microphone…");
@@ -682,6 +853,8 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
 
   function stop() {
     listening = false;
+    clearTimeout(reviewTimer); // stopped: stay wherever the reader is
+    if (live) startClock(live); // the phrase being spoken won't be finished
     local.stop();
     cloud.stop();
     closeMic();
@@ -708,15 +881,13 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
 
   // Swapping languages: clear the screen and listen for the other language.
   document.addEventListener("directionchange", async () => {
-    phrase++;
+    live = null;
     interimNext = null;
     recentLines.length = 0;
-    clearTimeout(fadeTimer);
-    if (shown.phrase >= 0) {
-      origText.textContent = "";
-      transText.textContent = "";
-    }
-    updateSay();
+    lastFinal = "";
+    // A clean screen for the other language; what was said is still there when scrolling up.
+    for (const e of entries.slice(-(KEEP_EARLIER + 2))) e.cleared = true;
+    refresh();
     if (!listening) return;
     stop();
     await start();
@@ -743,6 +914,19 @@ for (const tab of document.querySelectorAll(".tab[data-panel]")) {
     applySize();
   });
   $("liveShowOrig").addEventListener("change", (e) => stage.classList.toggle("hide-orig", !e.target.checked));
+  // How long lines stay: normal reading time, twice that, or until newer lines replace them.
+  const keepSel = $("liveKeep");
+  const applyKeep = () => {
+    keepFactor = keepSel.value === "always" ? Infinity : Number(keepSel.value) || 1;
+    refresh();
+  };
+  try { keepSel.value = localStorage.getItem("liveKeep") || "1"; } catch { /* storage blocked */ }
+  if (!keepSel.value) keepSel.value = "1";
+  applyKeep();
+  keepSel.addEventListener("change", () => {
+    try { localStorage.setItem("liveKeep", keepSel.value); } catch { /* storage blocked */ }
+    applyKeep();
+  });
   // Full screen (cinema mode): only the subtitles stay on screen. Where the browser allows it
   // (Android, computers) the page also enters real full screen; iPhone Safari doesn't allow
   // that for web pages, so there the app hides its own controls and suggests Add to Home Screen.

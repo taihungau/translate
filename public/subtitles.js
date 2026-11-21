@@ -68,3 +68,46 @@ export function findCueAt(cues, t) {
   }
   return -1;
 }
+
+// ---------------------------------------------------------------- live subtitles
+// In live mode nobody knows when the next line will come, so lines can't be timed like a film's
+// own subtitles. Instead the newest line sits in place and the ones before it move up and stay,
+// dimmed, until there has been time to read them.
+
+/**
+ * How long a finished live line stays on screen, in ms: time to read it at an easy pace, never
+ * less than 6 s nor more than 16 s. `factor` stretches it (Settings → Time on screen); Infinity
+ * keeps a line until newer ones replace it.
+ */
+export function readingTime(text, factor = 1) {
+  if (!Number.isFinite(factor)) return Infinity;
+  const ms = 2500 + 110 * [...String(text ?? "")].length;
+  return Math.round(Math.min(16000, Math.max(6000, ms)) * factor);
+}
+
+/**
+ * Which live lines are on screen: the newest, and up to `keep` lines before it, each only until
+ * its time is up. A line never leaves before the line above it, so the screen clears from the
+ * top. Everything earlier is reached by scrolling up.
+ * @param {{expires: number | null}[]} lines oldest first; `expires` is a time in ms, or null
+ *   while the line is still being spoken or translated
+ * @returns {{view: ("newest" | "earlier" | "gone")[], next: number}} `next` is when the view
+ *   changes next (Infinity if it won't on its own)
+ */
+export function liveView(lines, now, keep = 2) {
+  const last = lines.length - 1;
+  let floor = 0;
+  let next = Infinity;
+  const view = lines.map((line, i) => {
+    if (last - i > keep) return "gone";
+    let alive = true;
+    if (line.expires !== null) {
+      floor = Math.max(floor, line.expires);
+      alive = now < floor;
+      if (alive && floor < next) next = floor;
+    }
+    if (!alive) return "gone";
+    return i === last ? "newest" : "earlier";
+  });
+  return { view, next };
+}
