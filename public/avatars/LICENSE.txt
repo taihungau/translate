@@ -12,11 +12,19 @@ photo, and TalkingHead's README (Appendix A) lists free ways, including the CC0 
 route. The engine (public/avatar.js) needs a head with ARKit face shapes, the 14 Oculus visemes
 (viseme_aa …) and the bones chest, neck, head, eyeLeft and eyeRight.
 
-What was changed, for phones (2.3 and 1.7 MB instead of 27 MB each):
+What was changed (the files are 2.0 and 1.4 MB instead of 27 MB each):
 - smooth normals added (the samples have none); skin, eyes, teeth and the inside of the mouth
   split into parts so that each can be shaded in its own way;
 - the 25 face shapes the course never uses removed, the rest stored as 16-bit numbers; everything
   compressed with meshopt;
+- the texture rebuilt. The samples' is 4096x2048 but mostly empty, and the face in it is a small,
+  soft photo. The new one is 2048x1568: the photo three times larger, its face restored with
+  GFPGAN 1.4 and then GPEN-BFR-1024 (face restoration networks) and laid back over the enlarged
+  original; the middle of the face and the eyeballs painted again from it; the eyeballs white
+  where the photo shows eyelid, and the irises completed where the lids hide them, so the eyes can
+  turn; the eyelids smooth where they unfold in a blink. A second, smaller picture marks hair,
+  brows, beard, lips, skin and irises (found with a face-parsing network, BiSeNet): it rides in
+  each material's occlusion slot at strength 0, for recolouring;
 - woman.glb: the hair set on the head (moved so that the two models' eyes meet, bound to the
   bust's bones, its texture saved as WebP with the strands' colour spread under their edges); the
   head's own painted hair is pushed in by up to 7 mm and darkened under it.

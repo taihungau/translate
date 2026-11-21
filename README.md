@@ -137,11 +137,15 @@ Built to learn fast, not just to browse:
     server makes the audio, runs that same clip through Nova-3 to time each word, and returns
     `{ audio: base64 MP3, words: [{ w, s, e }] }` (cached a year like the MP3). Without timings (the
     published copy, or if timing fails) words are spread over the loud part of the clip.
-  - Models: `public/avatars/woman.glb` (2.3 MB) and `man.glb` (1.7 MB) are Avatar SDK's "Head 2.0"
+  - Models: `public/avatars/woman.glb` (2.0 MB) and `man.glb` (1.4 MB) are Avatar SDK's "Head 2.0"
     sample busts: heads made from a photo, so the skin is a real face rather than a painted one.
     The woman also wears the long hair of TalkingHead's Avaturn example avatar. **Neither is free
     for commercial use** (see `public/avatars/LICENSE.txt`, which also lists what was changed).
     Only the face for the chosen voice is downloaded.
+  - Sharpness: the samples' face is a small soft photo (about 260 px across). Each texture was
+    rebuilt at three times the size with the face restored by two face-restoration networks
+    (GFPGAN, then GPEN), so lashes, irises, brows, lips and beard are crisp even in close-up, and
+    the eyeballs were repainted so that the eyes can look around.
   - The look, in `avatar.js`: a warm key light in front, to one side and above, with soft
     shadows; a cool fill; a warm rim light behind; skin with a soft glow instead of shine; wet
     eyes with catchlights; teeth brightened (the models' are painted grey); hair drawn in two

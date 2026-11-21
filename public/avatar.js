@@ -30,7 +30,7 @@ const FACES = {
 };
 const FACE_VISEMES = ["PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"];
 const OPEN_VISEMES = { aa: 1, O: 0.8, E: 0.6, I: 0.45, U: 0.5, CH: 0.3, kk: 0.3 }; // how far each opens the mouth: the head moves a little with it
-const EYE_TURN = 9 * DEG; // the furthest the eyes turn
+const EYE_TURN = 12 * DEG; // the furthest the eyes turn
 const LIP_GAIN = 1.15; // lips a bit clearer than in normal speech, as a teacher would mouth them
 
 // The look: a portrait studio. A warm key light in front, to one side and above, casts soft
@@ -576,7 +576,7 @@ function animateFace(m, t, dt) {
   const quick = 1 - Math.exp(-dt * 40);
   m.eyeYaw += (m.gaze.yaw - m.eyeYaw) * quick;
   m.eyePitch += (m.gaze.pitch - m.eyePitch) * quick;
-  // the eyes hold what they look at while the head moves; they don't turn far (the eyeballs are painted only at the front)
+  // the eyes hold what they look at while the head moves; they don't turn far (the lashes' shade is painted on the eyeballs)
   const ey = Math.max(-EYE_TURN, Math.min(EYE_TURN, m.eyeYaw - yaw));
   const ep = Math.max(-EYE_TURN * 0.7, Math.min(EYE_TURN * 0.7, m.eyePitch - pitch));
   for (const eye of eyes) eye?.quaternion.setFromEuler(m.euler.set(ep, ey, 0));
