@@ -532,7 +532,8 @@ iris_lum = lum[iris_w > 0.5]
 iris_ref = float(iris_lum[iris_lum >= np.percentile(iris_lum, 33)].mean()) if len(iris_lum) else 0.2
 meta = {
     "size": [WIDTH, HEIGHT],
-    "luma": {"hair": avg(mask[..., 2] * ~eyes_area), "scalp": avg(scalp * ~eyes_area), "lips": avg(mask[..., 1]), "iris": iris_ref},
+    "luma": {"hair": avg(mask[..., 2] * ~eyes_area), "scalp": avg(scalp * ~eyes_area), "lips": avg(mask[..., 1]), "iris": iris_ref,
+             "skin": avg(mask[..., 0] * (1 - mask[..., 2]) * (1 - mask[..., 1]) * ~eyes_area)},
     "irises": [[float(c[0]), float(c[1]), float(r)] for c, r in irises],
 }
 json.dump(meta, open(f"{out}/meta.json", "w"), indent=1)

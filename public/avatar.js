@@ -303,7 +303,7 @@ function stageFace(THREE, root, who, look = FACE_LOOK) {
   // the colours that can be changed, as the shaders read them (see tintFace)
   const tint = {
     uHair: { value: new THREE.Vector4() }, uIris: { value: new THREE.Vector4() }, uLips: { value: new THREE.Vector4() },
-    uSkin: { value: new THREE.Vector3(1, 1, 1) }, uUnder: { value: 1 }, uLum: { value: new THREE.Vector4(1, 1, 1, 1) },
+    uSkin: { value: new THREE.Vector3(1, 1, 1) }, uUnder: { value: 1 }, uLum: { value: new THREE.Vector4(1, 1, 1, 1) }, uSkinLum: { value: 0.5 },
   };
   root.traverse((o) => {
     if (!o.isMesh) return;
@@ -415,6 +415,7 @@ uniform vec4 uLips;
 uniform vec3 uSkin;
 uniform float uUnder;
 uniform vec4 uLum; // average brightness of: painted hair, lips, irises, the strands of added hair
+uniform float uSkinLum; // … and of skin
 float faceLum( vec3 c ) { return dot( c, vec3( 0.2126, 0.7152, 0.0722 ) ); }
 `;
 const FACE_TINT = {
@@ -424,8 +425,12 @@ const FACE_TINT = {
     float lum = faceLum( diffuseColor.rgb );
     diffuseColor.rgb *= mix( vec3( 1.0 ), uSkin, mk.b * ( 1.0 - mk.r ) * ( 1.0 - 0.5 * mk.g ) );
     diffuseColor.rgb = mix( diffuseColor.rgb, uLips.rgb * ( lum / uLum.y ), smoothstep( 0.2, 0.8, mk.g ) * uLips.a );
-    // no brighter than hair gets: at its edge the map takes in a little skin, and a light colour would glow on it
-    diffuseColor.rgb = mix( diffuseColor.rgb, uHair.rgb * min( lum / uLum.x, 1.7 ), mk.r * uHair.a * ( 1.0 - 0.2 * mk.b ) );
+    // Brows and beard have skin between the hairs, and the hair's edge takes in a little skin. A dark
+    // colour may go over it (a shadow of stubble); a light one only on what is darker than skin.
+    float light = smoothstep( 0.08, 0.3, faceLum( uHair.rgb ) );
+    float strand = smoothstep( uSkinLum * 0.95, uSkinLum * 0.6, lum );
+    float dye = mk.r * uHair.a * ( 1.0 - 0.2 * mk.b ) * mix( 1.0, strand, light * mk.b );
+    diffuseColor.rgb = mix( diffuseColor.rgb, uHair.rgb * min( lum / uLum.x, 1.7 ), dye );
     diffuseColor.rgb *= mix( 1.0, uUnder, mk.r * ( 1.0 - mk.b ) ); // the head's own hair, in the shade of the hair over it
   }`,
   eyes: `
@@ -449,6 +454,7 @@ function recolourFace(p, tint) {
   if (lum.lips) tint.uLum.value.setY(lum.lips);
   if (lum.iris) tint.uLum.value.setZ(lum.iris);
   if (lum.strands) tint.uLum.value.setW(lum.strands);
+  if (lum.skin) tint.uSkinLum.value = lum.skin;
   p.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, tint, { uMask: { value: mask } });
     shader.fragmentShader = shader.fragmentShader
