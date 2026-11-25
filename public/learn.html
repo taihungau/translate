@@ -739,17 +739,16 @@
     .t-scene { min-height: 32px; padding: 0 12px; font-size: 14px; }
     .t-scene.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
     .has-backdrop :is(.t-mode:not([aria-checked="true"]), .t-scene:not(.on), .t-stars) { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); }
-    .teacher > .t-log { flex: 1 1 0; min-height: 60px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; overscroll-behavior: contain; padding: 2px 0;
-      -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px); mask-image: linear-gradient(to bottom, transparent 0, #000 14px); }
+    .teacher > .t-log { flex: 1 1 0; min-height: 60px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; overscroll-behavior: contain; padding: 2px 0; }
     .t-log > :first-child { margin-top: auto; }
     .t-hint { margin: 0; color: var(--ink-2); font-size: 15px; text-align: center; text-wrap: balance; }
     .t-line { margin: 0; max-width: 88%; padding: 9px 13px; border-radius: 18px; font-size: 16.5px; line-height: 1.35; }
-    .t-line.teacher { align-self: flex-start; background: var(--card); border-bottom-left-radius: 6px; box-shadow: var(--shadow); }
-    .t-line.teacher[lang="en"] { font-weight: 600; }
-    .t-line.her { align-self: flex-end; background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 6px; }
-    .t-line.her.live { opacity: 0.7; }
-    .t-line.note { align-self: center; max-width: 100%; padding: 4px 10px; background: none; color: var(--miss); font-size: 14px; text-align: center; }
-    .has-backdrop .t-line.teacher { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); }
+    .t-line.t-teacher { align-self: flex-start; background: var(--card); border-bottom-left-radius: 6px; box-shadow: var(--shadow); }
+    .t-line.t-teacher[lang="en"] { font-weight: 600; }
+    .t-line.t-her { align-self: flex-end; background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 6px; }
+    .t-line.t-her.t-live { opacity: 0.7; }
+    .t-line.t-note { align-self: center; max-width: 100%; padding: 4px 10px; background: none; color: var(--miss); font-size: 14px; text-align: center; }
+    .has-backdrop .t-line.t-teacher { background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-edge); }
     .t-extras { display: flex; flex-direction: column; gap: 10px; }
     .t-extras:empty { display: none; }
     .t-card { padding: 10px 14px; border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); text-align: center; animation: t-rise 0.3s ease-out; }

@@ -197,7 +197,7 @@ function paintLog() {
     return;
   }
   put(el, T.log.map((item) => h("p", {
-    class: `t-line ${item.who}${item.live ? " live" : ""}`, lang: item.lang ?? null,
+    class: `t-line t-${item.who}${item.live ? " t-live" : ""}`, lang: item.lang ?? null,
   }, item.text)));
   el.scrollTop = el.scrollHeight;
 }
