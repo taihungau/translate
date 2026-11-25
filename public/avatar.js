@@ -78,17 +78,19 @@ const OPEN_VISEMES = { aa: 1, O: 0.8, E: 0.6, I: 0.45, U: 0.5, CH: 0.3, kk: 0.3 
 const EYE_TURN = 12 * DEG; // the furthest the eyes turn
 const LIP_GAIN = 1.15; // lips a bit clearer than in normal speech, as a teacher would mouth them
 
-// The look: a portrait studio. A warm key light in front, to one side and above, casts soft
-// shadows (under the chin, beside the nose); a cool fill from the other side keeps them light; a
-// warm light from behind rims the hair and shoulders. Skin has a soft glow rather than shine, the
-// eyes a wet coat that catches the lights, the mouth stays darker inside.
+// The look: a beauty portrait studio. A large warm key light in front, a little to one side and
+// above, casts soft shadows (under the chin, beside the nose); a cool fill from the other side and a
+// reflector under the face (as in a clamshell setup) keep them light; a warm light from behind rims
+// the hair and shoulders. Skin has a soft glow rather than shine, the lips a soft gloss, the eyes a
+// wet coat that catches the lights; the mouth stays darker inside.
 const FACE_LOOK = {
-  exposure: 0.95,
-  environment: 0.5, // the room around her, seen in reflections and as soft all-round light
-  key: { color: 0xffead4, intensity: 2.6, position: [0.95, 0.72, 1.5], shadow: 0.7, softness: 3 },
-  fill: { color: 0xd8deff, intensity: 0.55, position: [-1.5, 0.15, 1.1] },
-  rim: { color: 0xffddb0, intensity: 1.5, position: [-0.7, 0.85, -1.5] },
-  skin: { roughness: 0.58, sheen: 0.3, sheenRoughness: 0.5, sheenColor: 0xffb9a0, specularIntensity: 0.45, envMapIntensity: 1 },
+  exposure: 1,
+  environment: 0.55, // the room around her, seen in reflections and as soft all-round light
+  key: { color: 0xffecd8, intensity: 2.45, position: [0.62, 0.66, 1.6], shadow: 0.55, softness: 4 },
+  fill: { color: 0xdde2ff, intensity: 0.6, position: [-1.5, 0.2, 1.1] },
+  bounce: { color: 0xffe0c8, intensity: 0.35, position: [0, -0.75, 1.4] },
+  rim: { color: 0xffddb0, intensity: 1.6, position: [-0.7, 0.85, -1.5] },
+  skin: { roughness: 0.58, sheen: 0.3, sheenRoughness: 0.5, sheenColor: 0xffb9a0, specularIntensity: 0.45, envMapIntensity: 1, lips: 0.3 }, // lips: their roughness
   eyes: { roughness: 0.06, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.7 },
   teeth: { roughness: 0.3, envMapIntensity: 0.5, color: [1.7, 1.66, 1.57], glow: 0.1 }, // the model's are painted grey, as if always in the dark
   mouth: { roughness: 0.28, color: 0xb8b0ae, envMapIntensity: 0.35 },
@@ -189,7 +191,6 @@ async function createFace() {
   renderer.toneMapping = THREE.NeutralToneMapping; // keeps the colours of the photo the skin comes from
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
-  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   faceView.append(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -208,16 +209,16 @@ async function createFace() {
   Object.assign(key.shadow.camera, { left: -0.3, right: 0.3, top: 0.34, bottom: -0.26, near: 0.5, far: 5 });
   key.shadow.bias = -0.0004;
   key.shadow.normalBias = 0.003;
-  faceGL = { renderer, scene, camera, key, fill: light(), rim: light() };
+  faceGL = { renderer, scene, camera, key, fill: light(), rim: light(), bounce: light() };
   lightFace();
   new ResizeObserver(fitFace).observe(faceView);
 }
 
 function lightFace(look = FACE_LOOK) {
-  const { renderer, scene, key, fill, rim } = faceGL;
+  const { renderer, scene, key, fill, rim, bounce } = faceGL;
   renderer.toneMappingExposure = look.exposure;
   scene.environmentIntensity = look.environment;
-  for (const [l, cfg] of [[key, look.key], [fill, look.fill], [rim, look.rim]]) {
+  for (const [l, cfg] of [[key, look.key], [fill, look.fill], [rim, look.rim], [bounce, look.bounce]]) {
     l.color.set(cfg.color);
     l.intensity = cfg.intensity;
     l.position.set(...cfg.position).multiplyScalar(1.6);
@@ -235,6 +236,8 @@ function fitFace() {
   const w = faceView.clientWidth;
   const h = faceView.clientHeight;
   if (!w || !h) return;
+  // as sharp as the screen (up to 3 pixels for each of the page's), within about 3 million pixels
+  renderer.setPixelRatio(Math.max(1, Math.min(3, window.devicePixelRatio || 1, Math.sqrt(3e6 / (w * h)))));
   renderer.setSize(w, h, false);
   renderer.domElement.style.cssText = "display:block;width:100%;height:100%";
   const { frame } = faceModel?.face ?? FACES[faceWanted];
@@ -304,6 +307,7 @@ function stageFace(THREE, root, who, look = FACE_LOOK) {
   const tint = {
     uHair: { value: new THREE.Vector4() }, uIris: { value: new THREE.Vector4() }, uLips: { value: new THREE.Vector4() },
     uSkin: { value: new THREE.Vector3(1, 1, 1) }, uUnder: { value: 1 }, uLum: { value: new THREE.Vector4(1, 1, 1, 1) }, uSkinLum: { value: 0.5 },
+    uGloss: { value: look.skin.lips },
   };
   root.traverse((o) => {
     if (!o.isMesh) return;
@@ -398,6 +402,7 @@ function dressFace(THREE, m, look, tint = null) {
     p.transparent = kind === "soft";
     p.depthWrite = kind === "hair";
     p.alphaTest = kind === "hair" ? s.solid : 0.02;
+    p.alphaToCoverage = kind === "hair"; // the strands' cut edges smoothed by the antialiasing, not jagged
   }
   p.needsUpdate = true;
   return p;
@@ -417,6 +422,7 @@ uniform vec3 uSkin;
 uniform float uUnder;
 uniform vec4 uLum; // average brightness of: painted hair, lips, irises, the strands of added hair
 uniform float uSkinLum; // … and of skin
+uniform float uGloss; // the lips' roughness
 float faceLum( vec3 c ) { return dot( c, vec3( 0.2126, 0.7152, 0.0722 ) ); }
 `;
 const FACE_TINT = {
@@ -440,8 +446,14 @@ const FACE_TINT = {
     diffuseColor.rgb = mix( diffuseColor.rgb, uIris.rgb * ( faceLum( diffuseColor.rgb ) / uLum.z ), iris * uIris.a );
   }`,
   hair: `
-  diffuseColor.rgb = mix( diffuseColor.rgb, uHair.rgb * ( faceLum( sampledDiffuseColor.rgb ) / uLum.w ), uHair.a );`,
+  diffuseColor.rgb = mix( diffuseColor.rgb, uHair.rgb * ( faceLum( sampledDiffuseColor.rgb ) / uLum.w ), uHair.a );
+  // a card of strands seen edge-on would be a hard dark line, not hair: it fades out
+  diffuseColor.a *= smoothstep( 0.04, 0.3, abs( dot( normalize( vNormal ), normalize( vViewPosition ) ) ) );`,
 };
+
+// The lips are glossier than the skin around them (the map's green says where they are).
+const FACE_GLOSS = `
+  roughnessFactor = mix( roughnessFactor, uGloss, smoothstep( 0.35, 0.85, texture2D( uMask, vMapUv ).g ) );`;
 
 /** Lets a material's colours be changed (see FACE_TINTS): skin, eyes, and the strands of added hair. */
 function recolourFace(p, tint) {
@@ -460,7 +472,8 @@ function recolourFace(p, tint) {
     Object.assign(shader.uniforms, tint, { uMask: { value: mask } });
     shader.fragmentShader = shader.fragmentShader
       .replace("void main() {", `${FACE_TINTS}void main() {`)
-      .replace("#include <map_fragment>", `#include <map_fragment>\n#ifdef USE_MAP${code}\n#endif`);
+      .replace("#include <map_fragment>", `#include <map_fragment>\n#ifdef USE_MAP${code}\n#endif`)
+      .replace("#include <roughnessmap_fragment>", `#include <roughnessmap_fragment>\n#ifdef USE_MAP${kind === "skin" ? FACE_GLOSS : ""}\n#endif`);
   };
   p.customProgramCacheKey = () => `face-${kind}`;
 }

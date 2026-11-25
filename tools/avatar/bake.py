@@ -1,12 +1,13 @@
 """Rebuilds a bust's texture: sharper, smaller, and with a map of what is hair, lips and skin.
 
 The sample's texture is 4096x2048 but mostly empty, and the face in it is a small soft photo.
-This makes a compact new texture (about 2048x1560) in which
+This makes a compact new texture (about 3072x2064) in which
 
-- the photo is three times larger, its face restored by two face-restoration networks
-  (GFPGAN 1.4, then GPEN-BFR-1024) and laid back over the enlarged original;
+- the photo is four times larger, its face restored by two face-restoration networks
+  (GFPGAN 1.4, then GPEN-BFR-2048) and laid back over the enlarged original;
+- with `beauty`, retouched and made up (beauty.py), where 68 landmarks (2DFAN4) put it;
 - the middle of the face (around the eyes, the nose, the lips) is painted again from that
-  restored photo, wherever the camera could see it;
+  restored photo, wherever the camera could see it, at twice its old size;
 - the eyeballs are painted again too, and white where the photo shows eyelid instead of eye, so
   the eyes can turn;
 - the other islands (teeth, inside of the mouth) are moved over, smaller.
@@ -14,10 +15,10 @@ This makes a compact new texture (about 2048x1560) in which
 and a second picture of the same layout, at half size: red = hair (also brows and beard; on the
 eyeballs: the iris), green = lips, blue = skin. The course's engine recolours with it.
 
-Usage: FACE_MODELS=<folder> python bake.py <raw.glb> <out-dir> [beard]
+Usage: FACE_MODELS=<folder> python bake.py <raw.glb> <out-dir> [beard] [beauty]
 Writes atlas.png, mask.png, uv.f32 (the new texture coordinates of every vertex) and meta.json,
 for prep-bust.mjs; and some pictures to check the work by (face.png, restored.png, photo-new.png,
-middle-check.png, atlas-plain.png).
+middle-check.png, atlas-plain.png, beauty-check.png).
 """
 import json
 import os
@@ -29,15 +30,18 @@ import onnxruntime as ort
 
 from bust import Bust
 
-MODELS = os.environ.get("FACE_MODELS", "models")  # the folder with the three .onnx files (see README.md)
+MODELS = os.environ.get("FACE_MODELS", "models")  # the folder with the .onnx files (see README.md)
 FFHQ = np.array([[192.98138, 239.94708], [318.90277, 240.1936], [256.63416, 314.01935], [201.26117, 371.41043], [313.08905, 371.15118]])
-WIDTH = 2048
+WIDTH = 3072
 PAD = 8  # pixels of margin around every island in the new texture
-SCALE = {"photo": 3.0, "middle": 1.0, "eye": 0.5, "tooth": 0.5, "mouth": 0.35}
+# how much larger each kind of island gets: the photo and the middle of the face end up with about
+# 3900 pixels per metre of skin (the middle had half the photo's detail)
+SCALE = {"photo": 4.0, "middle": 2.0, "eye": 0.5, "tooth": 0.5, "mouth": 0.35}
 ort.set_default_logger_severity(3)
 
 path, out = sys.argv[1:3]
 BEARD = "beard" in sys.argv[3:]
+BEAUTY = "beauty" in sys.argv[3:]
 os.makedirs(out, exist_ok=True)
 b = Bust(path)
 # Coordinates below are pixel indices: a pixel's centre is at a whole number.
@@ -171,6 +175,7 @@ smile = sorted([corner("mouthSmileLeft"), corner("mouthSmileRight")], key=lambda
 tip = b.pos[mid_v[np.argmax(b.pos[mid_v, 2])]]
 marks = to_photo(np.array([b.pos[eye_loops[0]].mean(0), b.pos[eye_loops[1]].mean(0), tip, smile[0], smile[1]]))
 T, _ = cv2.estimateAffinePartial2D(marks.astype(np.float32), FFHQ.astype(np.float32), method=cv2.LMEDS)  # old texture → the 512 px face the networks expect
+Tinv = cv2.invertAffineTransform(T)
 face = cv2.warpAffine(b.texture, T, (512, 512), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
 
 
@@ -193,7 +198,8 @@ def softmax(y):
     return e / e.sum(0)
 
 
-restored = restore("gpen_bfr_1024", restore("gfpgan_1.4", face))  # 1024 px: two pixels for each of the face's
+restored = restore("gpen_bfr_2048", restore("gfpgan_1.4", face))  # 2048 px: four pixels for each of the face's
+K = restored.shape[0] / 512
 parse_face = softmax(network("bisenet_resnet_34", face, "imagenet"))  # 19 classes × 512 × 512
 cv2.imwrite(f"{out}/face.png", face)
 cv2.imwrite(f"{out}/restored.png", restored)
@@ -203,13 +209,40 @@ mx, my = photo.grid_old()  # for every pixel of the new photo, its place in the 
 cx = T[0, 0] * mx + T[0, 1] * my + T[0, 2]  # … and in the 512 px face
 cy = T[1, 0] * mx + T[1, 1] * my + T[1, 2]
 plain = resized(photo).astype(np.float32)
-laid = cv2.remap(restored, (2 * cx + 0.5).astype(np.float32), (2 * cy + 0.5).astype(np.float32), cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT).astype(np.float32)
+ratio = K * np.hypot(T[0, 0], T[0, 1]) / SCALE["photo"]  # restored pixels for each of the new photo's
+soft = cv2.GaussianBlur(restored, (0, 0), 0.5 * np.sqrt(ratio ** 2 - 1)) if ratio > 1.1 else restored  # no aliasing when it is made smaller
+laid = cv2.remap(soft, (K * cx + (K - 1) / 2).astype(np.float32), (K * cy + (K - 1) / 2).astype(np.float32), cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT).astype(np.float32)
 edge = np.minimum(np.minimum(cx, 511 - cx), np.minimum(cy, 511 - cy))  # how far inside the face picture
 inside = smoothstep(6, 70, edge)[..., None]
 # the networks shift the overall tone a little: bring it back to the photo's, keeping their detail
-SIGMA = 24
+SIGMA = 8 * SCALE["photo"]
 laid += cv2.GaussianBlur(plain - laid, (0, 0), SIGMA)
-photo_new = np.clip(plain * (1 - inside) + laid * inside, 0, 255)
+photo_new = np.clip(plain * (1 - inside) + laid * inside, 0, 255).astype(np.float32)
+
+
+def landmarks(bgr):
+    """The 68 points of a face picture (2DFAN4), in its pixels."""
+    s = ort.InferenceSession(f"{MODELS}/2dfan4.onnx", providers=["CPUExecutionProvider"])
+    x = cv2.resize(bgr, (256, 256), interpolation=cv2.INTER_AREA).astype(np.float32) / 255
+    return s.run(None, {s.get_inputs()[0].name: np.ascontiguousarray(x.transpose(2, 0, 1))[None]})[0][0][:, :2] / 64 * bgr.shape[0]
+
+
+if BEAUTY:
+    from beauty import LOOK, beautify
+    lm = (landmarks(restored) + 0.5) / K - 0.5  # in the 512 px face
+    lm_new = photo.to_new(lm @ Tinv[:, :2].T + Tinv[:, 2]) - photo.at
+
+    def layer(classes):
+        """The face's reading, laid over the new photo like the restored face."""
+        got = cv2.remap(parse_face[classes].sum(0).astype(np.float32), cx.astype(np.float32), cy.astype(np.float32), cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        return got * inside[..., 0]
+
+    before = photo_new
+    # the upper liner is drawn on the lids themselves (below), so that it closes with them
+    photo_new = beautify(photo_new, lm_new, {"skin": layer([1, 10]), "brows": layer([2, 3]), "lips": layer([12, 13]), "eyes": layer([4, 5])}, {**LOOK, "liner": 0})
+    lo = np.maximum(lm_new.min(0) - 60, 0).astype(int)
+    hi = lm_new.max(0).astype(int) + 60
+    cv2.imwrite(f"{out}/beauty-check.png", np.hstack([before[lo[1]:hi[1], lo[0]:hi[0]], photo_new[lo[1]:hi[1], lo[0]:hi[0]]]).astype(np.uint8))
 cv2.imwrite(f"{out}/photo-new.png", photo_new.astype(np.uint8))
 atlas[:photo.size[1], :photo.size[0]] = photo_new.astype(np.uint8)
 
@@ -329,11 +362,52 @@ for side in (-1, 1):
     fold = np.zeros(take.shape, np.float32)
     fold[ys[eye], xs[eye]] = smoothstep(0.002, 0.0045, travel[eye])
     shade = np.ones(take.shape, np.float32)
-    shade[ys[eye], xs[eye]] = 0.95 - 0.5 * smoothstep(0.78, 0.98, travel[eye] / top)
+    lash = (0.8, 0.7) if BEAUTY else (0.5, 0.78)  # how dark the lash line is, and from where on the lid: with `beauty`, lined
+    shade[ys[eye], xs[eye]] = 0.95 - lash[0] * smoothstep(lash[1], 0.98, travel[eye] / top)
     fold = cv2.GaussianBlur(fold, (0, 0), 1.5)[..., None]
     shade = cv2.GaussianBlur(shade, (0, 0), 1.0)[..., None]
     new_middle = new_middle * (1 - fold) + tone[None, None] * shade * fold
     print(f"  upper lid ({'left' if side > 0 else 'right'}): travels up to {top * 1000:.1f} mm; skin tone {tone.round()}")
+
+
+def seg_distance(xy, line):
+    """Distance from points (n×2) to a polyline (m×2), and how far along it the nearest place is (0…1)."""
+    best, at = np.full(len(xy), np.inf), np.zeros(len(xy))
+    lengths = np.linalg.norm(np.diff(line, axis=0), axis=1)
+    start = np.r_[0, np.cumsum(lengths)] / lengths.sum()
+    for k in range(len(line) - 1):
+        a, d = line[k], line[k + 1] - line[k]
+        t = np.clip(((xy - a) @ d) / max(d @ d, 1e-12), 0, 1)
+        dist = np.linalg.norm(xy - (a + t[:, None] * d), axis=1)
+        closer = dist < best
+        best[closer] = dist[closer]
+        at[closer] = start[k] + t[closer] * (start[k + 1] - start[k])
+    return best, at
+
+
+if BEAUTY:
+    # Liner along the upper lashes: the edge of each eye's opening, from the inner corner to the
+    # outer, thicker towards the outer corner and on into a short wing, out and up; seen from the front.
+    ys, xs, p, nrm, q = places(middle)
+    liner = np.zeros(take.shape, np.float32)
+    for loop in eye_loops:
+        rim = b.pos[loop]
+        i0, i1 = np.argmin(np.abs(rim[:, 0])), np.argmax(np.abs(rim[:, 0]))  # inner and outer corners
+        n_ = len(loop)
+        chains = [np.r_[[(i0 + k) % n_ for k in range((i1 - i0) % n_ + 1)]], np.r_[[(i0 - k) % n_ for k in range((i0 - i1) % n_ + 1)]]]
+        upper = max(chains, key=lambda c: rim[c, 1].mean())
+        line = rim[upper, :2]
+        side = np.sign(line[-1, 0])
+        wing = line[-1] + 0.0042 * np.array([side, 0.55]) / np.hypot(1, 0.55)
+        line = np.vstack([line, wing])
+        d, t = seg_distance(p[:, :2], line)
+        corner_at = 1 - np.linalg.norm(wing - line[-2]) / (np.linalg.norm(np.diff(line, axis=0), axis=1).sum())
+        width = np.interp(t, [0, 0.35, corner_at * 0.9, corner_at, 1], [0.35, 0.6, 1.0, 1.0, 0.12]) * 0.0013
+        near = np.linalg.norm(p[:, :2] - rim[:, :2].mean(0), axis=1) < 0.03
+        liner[ys, xs] = np.maximum(liner[ys, xs], (1 - smoothstep(0.7 * width, 1.1 * width, d)) * near * (p[:, 2] > rim[:, 2].min() - 0.004))
+    liner = cv2.GaussianBlur(liner, (0, 0), 0.6)[..., None]
+    new_middle = new_middle * (1 - 0.85 * liner) + np.array(LOOK["liner_colour"], np.float32) * 0.85 * liner
+    print(f"  liner on the lids: {(liner > 0.5).sum()} pixels")
 my0, mx0 = middle.at[1], middle.at[0]
 atlas[my0:my0 + middle.size[1], mx0:mx0 + middle.size[0]] = np.clip(new_middle, 0, 255).astype(np.uint8)
 # how well does the map from head to photo fit? The middle painted from the *plain* photo should match what was there
@@ -346,9 +420,8 @@ cv2.imwrite(f"{out}/middle-check.png", np.hstack([old_middle, check, new_middle]
 
 # ------------------------------------------------------------------ the eyeballs
 # the iris in the restored face: a circle found in each eye opening
-gray = cv2.cvtColor(restored, cv2.COLOR_BGR2GRAY)
+gray = cv2.cvtColor(cv2.resize(restored, (1024, 1024), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)  # two pixels for each of the face's
 irises = []  # centre and radius, in old texture pixels
-Tinv = cv2.invertAffineTransform(T)
 scale_face = np.hypot(T[0, 0], T[0, 1])  # face pixels per old texture pixel
 for loop in eye_loops:
     c_old = to_photo(b.pos[loop]).mean(0)
@@ -391,7 +464,7 @@ for it in (i for i in items if i.island["kind"] == "eye"):
         white = np.median(bright, axis=0) if len(bright) > 20 else np.array([215, 215, 220.0])
     else:
         white = np.array([215, 215, 220.0])
-    white = white * max(1, 186 / white.mean())  # the photo's whites are in the lids' shade: not darker than a light grey
+    white = white * max(1, (198 if BEAUTY else 186) / white.mean())  # the photo's whites are in the lids' shade: not darker than a light grey
     painted = np.zeros((it.size[1], it.size[0]), np.float32)
     painted[ys, xs] = 0.8 + 0.2 * np.clip(nrm[:, 2], 0, 1)  # a little darker towards the sides and the back
     cover = np.zeros(painted.shape, np.uint8)
@@ -413,6 +486,8 @@ for it in (i for i in items if i.island["kind"] == "eye"):
         frac = np.clip(d * 16 - 0.5, 0, 16.999)
         lo_ring = frac.astype(int)
         whole_iris = profile[lo_ring] * (1 - (frac - lo_ring))[:, None] + profile[np.minimum(lo_ring + 1, 17)] * (frac - lo_ring)[:, None]
+        if BEAUTY:  # a darker ring at the iris's edge: the eyes read clearer
+            whole_iris *= (1 - 0.35 * smoothstep(0.8, 1.0, d))[:, None]
         in_iris = ((1 - smoothstep(0.92, 1.04, d)) * (nrm[:, 2] > 0.3))[:, None]
         ball[ys, xs] = ball[ys, xs] * (1 - in_iris) + whole_iris * in_iris
     result = ball * (1 - shown[..., None]) + colour * shown[..., None]

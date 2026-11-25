@@ -6,8 +6,8 @@
 //  - mouth shapes renamed to Oculus viseme names (viseme_aa…), as the lip-sync module calls them;
 //  - blendshape deltas as 16-bit numbers, everything meshopt-compressed.
 //  - optionally, the texture rebuilt by face-ai/bake.py (sharper and compact), with its map of
-//    hair, lips and skin, and long hair from another model.
-// Usage: node prep-bust.mjs <in.glb> <out.glb> [drop=name,name…] [atlas=<dir>] [hair=<file.glb>[,scale,dx,dy,dz,wide,deep]]
+//    hair, lips and skin, long hair from another model, and a slimmer lower face.
+// Usage: node prep-bust.mjs <in.glb> <out.glb> [drop=name,name…] [atlas=<dir>] [hair=<file.glb>[,scale,dx,dy,dz,wide,deep]] [slim=<0…0.1>]
 import { NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, EXTMeshoptCompression, KHRMeshQuantization } from "@gltf-transform/extensions";
 import { prune } from "@gltf-transform/functions";
@@ -49,6 +49,30 @@ let targets = prim.listTargets().map((t) => t.getAttribute("POSITION").getArray(
 const keep = names.map((n) => !DROP.has(n));
 targets = targets.filter((_, k) => keep[k]);
 names = names.filter((_, k) => keep[k]).map((n) => VISEMES[n] ?? n);
+
+// ---- slim=<amount>: a V-shaped lower face. The cheeks under the cheekbones, the jaw and the chin
+// are drawn in towards the middle (by that share of their distance from it); nothing moves above
+// the nose's tip, at the back of the jaw or down the neck, and every face shape moves the same way.
+const slimArg = process.argv.slice(4).find((a) => a.startsWith("slim="));
+if (slimArg) {
+  const amount = Number(slimArg.slice(5));
+  let tip = 0;
+  for (let i = 0; i < count; i++) if (P[i * 3 + 2] > P[tip * 3 + 2]) tip = i;
+  const tipY = P[tip * 3 + 1];
+  const step = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  let moved = 0, most = 0;
+  for (let i = 0; i < count; i++) {
+    const y = P[i * 3 + 1], z = P[i * 3 + 2];
+    const w = step(tipY + 0.004, tipY - 0.03, y) * step(tipY - 0.1, tipY - 0.066, y) * step(-0.015, 0.035, z);
+    if (w <= 0) continue;
+    const k = 1 - amount * w;
+    most = Math.max(most, Math.abs(P[i * 3]) * (1 - k));
+    P[i * 3] *= k;
+    for (const t of targets) t[i * 3] *= k;
+    moved++;
+  }
+  console.log(`slim: ${moved} vertices drawn in, by up to ${(most * 1000).toFixed(1)} mm`);
+}
 
 // ---- the rebuilt texture, if any: new texture coordinates for every vertex, and the map of hair, lips and skin
 let UV2 = UV, look = null, maskRaw = null;
