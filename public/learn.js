@@ -2459,7 +2459,7 @@ initTeacher({
   h, icon, lessonIcon, setView, themeToggle, load, save, dayKey, confetti,
   voice: () => voiceChoice,
   level: myLevel,
-  available: () => ({ app: inApp, ready: teacherReady }),
+  available: () => ({ app: inApp, ready: teacherReady, claude: writingCheck, deepgram: Boolean(Recognizer) }),
   canDrawFace: () => CAN_DRAW_FACE,
   canListen: () => Boolean(Recognizer && navigator.mediaDevices?.getUserMedia),
   speechToken,

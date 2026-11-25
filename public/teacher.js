@@ -188,9 +188,10 @@ function paintLog() {
   const el = T.el.log;
   if (!el?.isConnected) return;
   if (!T.log.length) {
-    const { app, ready } = ctx.available();
+    const { app, ready, claude, deepgram } = ctx.available();
+    const missing = [claude ? null : "Claude (ANTHROPIC_API_KEY)", deepgram ? null : "Deepgram (DEEPGRAM_API_KEY)"].filter(Boolean);
     const hint = !app ? "Учитель работает в приложении: там есть сервер с распознаванием речи и Claude."
-      : !ready ? "Учитель ещё не подключён: на сервере нужны ключи Claude (ANTHROPIC_API_KEY) и Deepgram (DEEPGRAM_API_KEY)."
+      : !ready ? `Учитель ещё не подключён: на сервере (Vercel → Settings → Environment Variables) нужен ключ ${missing.join(" и ") || "Claude"}.`
       : T.started ? "" : `${name().ru} спросит тебя о чём-нибудь, а ты отвечай вслух — как получится. Можно по-русски, можно по-английски. Ошибаться можно и нужно!`;
     put(el, hint ? h("p", { class: "t-hint" }, hint) : null);
     return;
