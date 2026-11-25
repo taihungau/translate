@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleTranslate, handleSpeechToken, handleTts, handleLipsync, handleCheckWriting, handleProgress, speechConfig } from "../lib/handler.js";
+import { handleTeacher } from "../lib/teacher.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(here, "..", "public");
@@ -61,7 +62,28 @@ async function serveStatic(req, res) {
   }
 }
 
+// The teacher's answer streams: headers go out with the first words.
+async function streamTeacher(req, res) {
+  let body;
+  try {
+    body = await readJson(req);
+  } catch (err) {
+    return sendJson(res, err.status || 400, { error: err.status ? err.message : "Invalid JSON" });
+  }
+  const stop = new AbortController();
+  res.on("close", () => { if (!res.writableFinished) stop.abort(); });
+  const write = (text) => {
+    if (!res.headersSent) res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+    res.write(text);
+  };
+  const result = await handleTeacher(body, req.headers["x-access-code"], write, { signal: stop.signal });
+  if (result.status !== 200) return sendJson(res, result.status, result.body);
+  if (!res.headersSent) res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+  res.end();
+}
+
 const server = http.createServer((req, res) => {
+  if (req.method === "POST" && req.url === "/api/teacher") return streamTeacher(req, res);
   if (req.method === "POST" && req.url === "/api/translate") return handleJsonRequest(req, res, handleTranslate);
   if (req.method === "POST" && req.url === "/api/check-writing") return handleJsonRequest(req, res, handleCheckWriting);
   if (req.method === "POST" && req.url === "/api/progress") return handleJsonRequest(req, res, handleProgress);
@@ -74,7 +96,8 @@ const server = http.createServer((req, res) => {
     if (q.get("lipsync") === "1") {
       return handleLipsync(q.get("text"), q.get("voice") ?? undefined, q.get("code") ?? req.headers["x-access-code"]).then((r) => sendJson(res, r.status, r.body));
     }
-    return handleTts(q.get("text"), q.get("voice") ?? undefined, q.get("code") ?? req.headers["x-access-code"]).then((r) => {
+    const options = { lang: q.get("lang") ?? "en", teacher: q.get("teacher") === "1" };
+    return handleTts(q.get("text"), q.get("voice") ?? undefined, q.get("code") ?? req.headers["x-access-code"], options).then((r) => {
       if (r.status !== 200) return sendJson(res, r.status, r.body);
       res.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "public, max-age=31536000, immutable" }).end(r.audio);
     });

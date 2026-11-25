@@ -22,6 +22,9 @@
     },
     "api/progress.js": {
       "maxDuration": 10
+    },
+    "api/teacher.js": {
+      "maxDuration": 60
     }
   }
 }
