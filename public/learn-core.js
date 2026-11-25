@@ -317,3 +317,37 @@ export function spreadWords(text, [start, end]) {
   }
   return words;
 }
+
+// Russian is read the way it is written, so its mouth shapes come straight from the letters
+// (the talking face's English lip-sync module only knows English spelling). Vowels last longer
+// than consonants; soft and hard signs make no shape of their own.
+const RU_VISEMES = {
+  а: "aa", я: "aa", о: "O", ё: "O", у: "U", ю: "U", ы: "I", и: "I", е: "E", э: "E", й: "I",
+  б: "PP", п: "PP", м: "PP", в: "FF", ф: "FF", т: "DD", д: "DD", н: "nn", л: "nn",
+  с: "SS", з: "SS", ц: "SS", ш: "CH", ж: "CH", щ: "CH", ч: "CH", к: "kk", г: "kk", х: "kk", р: "RR",
+};
+const RU_VOWELS = new Set([..."аяоёуюыиеэ"]);
+
+/**
+ * Mouth shapes for a Russian word, in the shape the English lip-sync module returns:
+ * `{ visemes, times, durations }` (relative units; the face spreads them over the word's time).
+ */
+export function russianVisemes(word) {
+  const visemes = [];
+  const times = [];
+  const durations = [];
+  let t = 0;
+  for (const ch of String(word).toLowerCase()) {
+    const v = RU_VISEMES[ch];
+    if (!v) continue;
+    const d = RU_VOWELS.has(ch) ? 1.6 : 1;
+    if (visemes.at(-1) === v) durations[durations.length - 1] += d; // a doubled letter is one longer shape
+    else {
+      visemes.push(v);
+      times.push(t);
+      durations.push(d);
+    }
+    t += d;
+  }
+  return { visemes, times, durations };
+}

@@ -11,7 +11,7 @@
 // sync at 0,5× or 2×. Word timings come with the audio from `api/tts?lipsync=1`; without them (a
 // published copy), words are spread over the part of the clip that is loud. Words become mouth
 // shapes with TalkingHead's English lip-sync module (MIT, github.com/met4citizen/TalkingHead).
-import { spreadWords } from "./learn-core.js";
+import { spreadWords, russianVisemes } from "./learn-core.js";
 
 const DEG = Math.PI / 180;
 
@@ -357,7 +357,8 @@ function stageFace(THREE, root, who, look = FACE_LOOK) {
     contactUntil: 0,
     listenUntil: 0,
     listen: 0,
-    react: null, // { good, at }
+    react: null, // { kind, at }: a mood shown for a few seconds (see avatarMood)
+    thinking: false,
     browAt: -9,
     nodAt: -9,
     mouthOpen: 0,
@@ -488,7 +489,7 @@ function tintFace(m) {
 function faceCues(lipsync, words) {
   const cues = [];
   for (const { w, s, e } of words) {
-    const val = lipsync.wordsToVisemes(lipsync.preProcessText(w));
+    const val = /[\u0400-\u04ff]/.test(w) ? russianVisemes(w) : lipsync.wordsToVisemes(lipsync.preProcessText(w));
     const n = val?.visemes?.length ?? 0;
     if (!n) continue;
     const total = val.times[n - 1] + val.durations[n - 1];
@@ -589,9 +590,25 @@ const faceReady = () => Boolean(faceModel && faceStage.isConnected);
 
 /** A reaction to her answer: a smile and a nod when it's right, a kind look when it isn't. */
 export function avatarReact(good) {
-  if (!faceReady()) return;
-  faceModel.react = { good: Boolean(good), at: faceModel.last };
+  avatarMood(good ? "proud" : "kind");
+}
+
+/**
+ * A mood on the face for a few seconds: "happy", "laugh", "surprised", "thinking", "proud" (a
+ * smile and a nod) or "kind" (a soft smile and raised brows).
+ */
+export function avatarMood(kind) {
+  if (!faceReady() || !FACE_MOODS.includes(kind)) return;
+  faceModel.react = { kind, at: faceModel.last };
   faceModel.contactUntil = faceModel.last + 3;
+}
+const FACE_MOODS = ["happy", "laugh", "surprised", "thinking", "proud", "kind"];
+
+/** While she waits for an answer: eyes up and to the side, as when thinking. */
+export function avatarThink(on) {
+  if (!faceReady() || faceModel.thinking === Boolean(on)) return;
+  faceModel.thinking = Boolean(on);
+  faceModel.nextGlance = faceModel.last; // the eyes move at once
 }
 
 /** Looks at her, attentive, while she speaks. */
@@ -668,19 +685,42 @@ function animateFace(m, t, dt) {
   if (m.react) {
     const u = t - m.react.at;
     const e = faceEase(u / 0.3) * (1 - faceEase((u - 1.7) / 0.9)); // in, held, out
+    const lips = speaking ? 0.4 : 1; // while talking, the mouth belongs to the words
+    const smile = (v) => { want("mouthSmileLeft", v * e); want("mouthSmileRight", v * e); };
+    const squint = (cheek, eye) => { want("cheekSquintLeft", cheek * e); want("cheekSquintRight", cheek * e); want("eyeSquintLeft", eye * e); want("eyeSquintRight", eye * e); };
     if (u > 2.7) m.react = null;
-    else if (m.react.good) {
-      want("mouthSmileLeft", 0.45 * e); want("mouthSmileRight", 0.45 * e);
-      want("laughter", 0.4 * e); // a smile that shows the teeth
-      want("cheekSquintLeft", 0.4 * e); want("cheekSquintRight", 0.4 * e);
-      want("eyeSquintLeft", 0.3 * e); want("eyeSquintRight", 0.3 * e);
+    else if (m.react.kind === "proud") {
+      smile(0.45);
+      want("laughter", 0.4 * e * lips); // a smile that shows the teeth
+      squint(0.4, 0.3);
       want("browInnerUp", 0.1 * e);
       if (u < 1.4) nod = 5.5 * DEG * Math.sin(u * Math.PI * 2 * 1.5) * Math.exp(-u * 1.5); // yes, yes
+    } else if (m.react.kind === "happy") {
+      smile(0.4);
+      squint(0.25, 0.15);
+    } else if (m.react.kind === "laugh") {
+      smile(0.5);
+      want("laughter", 0.55 * e * lips);
+      squint(0.45, 0.35);
+      if (u < 1.2) nod = 2 * DEG * Math.sin(u * Math.PI * 2 * 3.5) * Math.exp(-u * 2); // a giggle
+    } else if (m.react.kind === "surprised") {
+      want("browInnerUp", 0.55 * e); want("browOuterUpLeft", 0.45 * e); want("browOuterUpRight", 0.45 * e);
+      want("eyeWideLeft", 0.4 * e); want("eyeWideRight", 0.4 * e);
+      if (!speaking) want("jawOpen", 0.1 * e);
+      nod = -2 * DEG * e; // the head goes back a little
+    } else if (m.react.kind === "thinking") {
+      want("browInnerUp", 0.2 * e); want("browDownLeft", 0.2 * e);
+      smile(0.08);
+      tilt = -3 * DEG * e;
     } else {
-      want("mouthSmileLeft", 0.22 * e); want("mouthSmileRight", 0.22 * e);
+      smile(0.22);
       want("browInnerUp", 0.32 * e);
       tilt = 3 * DEG * e;
     }
+  }
+  if (m.thinking && !speaking) {
+    want("browInnerUp", 0.12); want("browDownLeft", 0.15);
+    tilt -= 2 * DEG;
   }
 
   // --- head: a slow sway, livelier while speaking, stiller while listening
@@ -698,7 +738,9 @@ function animateFace(m, t, dt) {
   // --- eyes: on her, with small jumps around her face; now and then a glance away
   if (t >= m.nextGlance) {
     const away = !attending && Math.random() < 0.2;
-    m.gaze = away
+    const ponder = m.thinking || m.react?.kind === "thinking";
+    m.gaze = ponder ? { yaw: (Math.random() < 0.5 ? -1 : 1) * (5 + Math.random() * 3) * DEG, pitch: -(4 + Math.random() * 3) * DEG } // looking up, to the side
+      : away
       ? { yaw: (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 4) * DEG, pitch: (Math.random() * 5 - 2) * DEG }
       : { yaw: (Math.random() * 2 - 1) * 1.5 * DEG, pitch: (Math.random() * 2 - 1) * 0.9 * DEG };
     m.nextGlance = t + (away ? 0.5 + Math.random() * 0.7 : 0.9 + Math.random() * 2.4);

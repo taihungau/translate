@@ -48,6 +48,49 @@ aloud:
 
 Both can be turned off in Settings → Pronunciation.
 
+## AI English teacher (the course's main page)
+
+`learn.html` opens on **Учитель**: a live, talking AI English teacher. She (Эмма, or Алекс with the
+male voice) is the photo-real face from the course, and the learner simply talks to her, out loud,
+in English or Russian, or both in one sentence. A tab bar at the bottom leads everywhere else:
+**Учитель · Говорить · Слушать · Читать · Писать · Главная** (the four skill pages and the
+course page). The full brief this was built from is `docs/ai-teacher-meta-prompt.md`.
+
+- **What a lesson is like:** short turns that nearly always end with a question; Russian and
+  English mixed by her level (mostly Russian at A–B, half and half at C–D, mostly English from E);
+  a new activity every few turns (quick-fire questions, would you rather, guess the word, find my
+  mistake, story chain, translation races, tongue twisters, role-plays); corrections as a gentle
+  recast with the fix shown; stars for real successes, which count towards the daily goal.
+- **Modes:** *Урок дня* (the next unit of her track: its phrases, rule and a mini role-play),
+  *Болтаем* (free conversation), *Игры*, *Сценки* (café, beauty salon, hotel, airport, shop,
+  doctor, date, job interview) and *Повторение* (phrases due for review). The teacher remembers
+  what she learns about the learner (name, job, likes) on the device and brings it up later.
+- **On screen:** what each of them says, a card with the phrase to say (English, pronunciation in
+  Russian letters, meaning), answer buttons she can tap or say, one big button (start, mute,
+  "I'm done", interrupt), typing instead of speaking, and a slower voice.
+- **Real time:**
+  - *Listening:* Deepgram **Flux STT Multilingual** (`flux-general-multi`, English and Russian
+    hints) streams from the browser with a short-lived token and decides when her turn is over,
+    patient with pauses. If Flux can't connect, Nova-3 (`language=multi`) with its own timer.
+  - *Thinking:* `POST /api/teacher` streams Claude's answer line by line. When Flux says she has
+    *probably* finished (`EagerEndOfTurn`), the answer is already being written, and it is used as
+    soon as she really has; if she goes on, it is dropped.
+  - *Speaking:* each line goes, as soon as it is written, to Deepgram **Flux TTS** over a
+    WebSocket: an American voice for English (Hannah / Cole) and a native Russian voice for
+    Russian (Natalia / Mikhail). Audio plays through Web Audio as it arrives, in order, without
+    gaps; the face's lips follow (Russian mouth shapes come from the letters). If a voice socket
+    fails, the line comes whole from `/api/tts?teacher=1`, or from the phone's own voice.
+  - *Interrupting:* when she starts talking over the teacher, the teacher stops at once; what she
+    actually heard is what goes into the conversation. The teacher's own voice coming back from
+    the speaker is recognised and ignored (only while she speaks, so repeating after her counts).
+- **Model:** Claude Sonnet 5.5 with extended thinking off and low effort, chosen for a quick first
+  word (`TEACHER_MODEL` / `TEACHER_EFFORT` change it); the rules are a cached system prompt
+  (`lib/teacher.js`), followed by her level, mode, unit, phrases due and notes.
+- **Needs** `ANTHROPIC_API_KEY` and `DEEPGRAM_API_KEY` on the server (`/api/config` shows
+  `"teacher": true`). Without them the page says what is missing.
+- The course as it was before the teacher became its main page is kept in the branch
+  `saved/course-before-ai-teacher` (and in the published claude.ai copy of the course).
+
 ## English course (Learn)
 
 `learn.html` (the book tab, or "Курс английского" on the start screen) is an English course for a
@@ -289,8 +332,8 @@ as a serverless function (`local/server.js` is only for running locally).
 
 1. Push the repo to GitHub, then in Vercel choose **Add New… → Project** and import it.
    Leave the framework preset as **Other**; `vercel.json` sets everything else.
-2. Under **Settings → Environment Variables**, add `DEEPGRAM_API_KEY` for speech recognition,
-   `ANTHROPIC_API_KEY` if you use Claude for translation, and `ACCESS_CODE` so
+2. Under **Settings → Environment Variables**, add `DEEPGRAM_API_KEY` for speech recognition and
+   the voices, `ANTHROPIC_API_KEY` for the AI teacher and Claude translation, and `ACCESS_CODE` so
    strangers who find the URL can't spend your API credit. `TRANSLATE_MODEL` and
    `TRANSLATE_EFFORT` work here too.
 3. Deploy, then open the `https://….vercel.app` URL. Vercel serves over HTTPS, which browsers
@@ -314,6 +357,16 @@ a line, the API retries it on a fallback model inside the same call.
 - Video files never leave your machine. Only subtitle text is sent to the server.
 
 ## API
+
+`POST /api/teacher` (the AI teacher's next turn, streamed as `text/plain`)
+
+```json
+{ "messages": [{ "role": "user", "content": "[start]" }],
+  "context": { "voice": "female", "level": "B", "mode": "lesson", "lesson": "hello", "review": [], "notes": [] } }
+```
+
+streams lines such as `ru: Привет!`, `en: What's your name?`, `card: … | …`, `choices: a | b`,
+`fix: … → …`, `star: …`, `mood: happy`, `note: …`, `learned: …` (see `lib/teacher.js`).
 
 `POST /api/translate`
 

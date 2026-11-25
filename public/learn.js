@@ -6,6 +6,7 @@ import { TRACKS, LEVELS, LESSONS } from "./lessons.js";
 import { mergeProgress, normalizeCode, SYNC_KEYS } from "./learn-sync.js";
 import { compareSpeech, checkWriting, testQuestions, choices, grade, isLearned, isDue, verdict, dayKey, streak, clozeItem, buildWorkout, LEVEL_LETTERS, placementStep } from "./learn-core.js";
 import { avatarSupported, avatarStage, avatarRefresh, avatarSay, avatarHush, avatarReact, avatarListen, avatarLook, avatarChoices, avatarDefault } from "./avatar.js";
+import { initTeacher, renderTeacher, leaveTeacher } from "./teacher.js";
 
 const APP_URL = "https://translate-hyperlinks-projects.vercel.app/";
 const view = document.getElementById("view");
@@ -156,8 +157,40 @@ function icon(name, set = "i") {
 // Replaces the screen's content. Parts left out with null or false are skipped, not shown as text.
 const setView = (...parts) => {
   view.replaceChildren(...parts.flat().filter((part) => part != null && part !== false));
+  showTabs();
   avatarRefresh(); // the talking face runs only while it is on screen
 };
+
+// The tab bar at the bottom of the main screens: the AI teacher, the four skills, the course.
+// Inside an exercise or a test it hides; those screens have their own way back.
+const TABS = [
+  { id: "teacher", label: "Учитель", icon: "sparkles", href: () => "#teacher" },
+  { id: "speak", label: "Говорить", icon: "mic", href: () => "#skill-speak" },
+  { id: "listen", label: "Слушать", icon: "headphones", href: () => "#skill-listen" },
+  { id: "read", label: "Читать", icon: "book-open-text", href: () => "#skill-read" },
+  { id: "write", label: "Писать", icon: "pencil-line", href: () => "#skill-write" },
+  { id: "home", label: "Главная", icon: "house", href: () => `#${currentTrack}` },
+];
+const tabBar = document.createElement("nav");
+tabBar.className = "tabbar";
+tabBar.setAttribute("aria-label", "Разделы");
+document.body.append(tabBar);
+/** Which tab a screen belongs to, or null for screens without the tab bar. */
+function tabOf(hash) {
+  if (hash === "" || hash === "teacher") return "teacher";
+  const skill = /^skill-(speak|listen|read|write)$/.exec(hash);
+  if (skill) return skill[1];
+  if (TRACKS.some((t) => t.id === hash) || hash === "grammar-plan") return "home";
+  return /^(unit|practice|test|listen|read|speak|look|workout|placement)(-|$)/.test(hash) ? null : "home";
+}
+function showTabs() {
+  const active = tabOf(location.hash.slice(1));
+  document.body.classList.toggle("with-tabs", Boolean(active));
+  tabBar.hidden = !active;
+  if (!active) return;
+  tabBar.replaceChildren(...TABS.map((t) => h("a", { class: "tab", href: t.href(), "aria-current": t.id === active ? "page" : null },
+    lessonIcon(t.icon, "tab-icon"), h("span", {}, t.label))));
+}
 const backLink = (href, text) => h("a", { class: "back", href }, icon("back"), text);
 const plural = (n, one, few, many) => {
   const mod10 = n % 10;
@@ -437,6 +470,7 @@ async function detectApp() {
     const config = await res.json();
     inApp = true;
     serverTts = Boolean(config.tts);
+    teacherReady = Boolean(config.teacher);
     writingCheck = Boolean(config.writing);
     syncEnabled = Boolean(config.sync);
     if (config.cloudSpeech) ({ CloudRecognizer: Recognizer } = await import("./cloud-asr.js"));
@@ -470,6 +504,8 @@ function showFoot() {
     foot.append(" Проверка произношения голосом работает ", h("a", { href: `${APP_URL}learn.html`, target: "_blank", rel: "noopener" }, "в приложении"), ".");
   }
 }
+
+let teacherReady = false; // the server has Claude and Deepgram for the AI teacher
 
 async function speechToken() {
   const res = await fetch("api/speech-token", { method: "POST", headers: { "X-Access-Code": accessCode() } });
@@ -2370,6 +2406,11 @@ function route(_event, keepScroll = false) {
   attempt?.cancel();
   stopSound();
   const hash = location.hash.slice(1);
+  if (hash === "" || hash === "teacher") { // the AI teacher: the app's main page
+    renderTeacher();
+    return top();
+  }
+  leaveTeacher();
   if (hash === "look") { // the face's colours: an exercise left for it stays as it was
     renderLook();
     return top();
@@ -2413,6 +2454,37 @@ function route(_event, keepScroll = false) {
   renderCourse(TRACKS.some((t) => t.id === hash) ? hash : currentTrack);
   top();
 }
+// What the AI teacher (teacher.js) needs from the course.
+initTeacher({
+  h, icon, lessonIcon, setView, themeToggle, load, save, dayKey, confetti,
+  voice: () => voiceChoice,
+  level: myLevel,
+  available: () => ({ app: inApp, ready: teacherReady }),
+  canDrawFace: () => CAN_DRAW_FACE,
+  canListen: () => Boolean(Recognizer && navigator.mediaDevices?.getUserMedia),
+  speechToken,
+  accessCode,
+  // the lesson for "Урок дня": the next one in the chosen track, or in everyday English
+  lessonForToday: () => nextLesson(currentTrack) ?? nextLesson("daily"),
+  // phrases she has met that are due again, the most overdue first
+  dueReview: () => {
+    const now = Date.now();
+    return ALL_PHRASES.filter((p) => isDue(progress[p.en], now)).sort((a, b) => progress[a.en].due - progress[b.en].due).slice(0, 12).map((p) => p.en);
+  },
+  // she said a course phrase right in the conversation: it counts as practised
+  learned: (en) => {
+    const phrase = ALL_PHRASES.find((p) => p.en.toLowerCase() === String(en).trim().toLowerCase());
+    if (!phrase) return;
+    progress[phrase.en] = grade(progress[phrase.en], true);
+    save("learnProgress", progress);
+  },
+  countStar: countCard,
+  pronounce: async (text) => {
+    await loadPronunciation();
+    return pronounceEnglish ? pronounceEnglish(text) : null;
+  },
+});
+
 addEventListener("hashchange", route);
 route();
 showFoot();
